@@ -4,7 +4,7 @@ A smart contract that saves ether from groups of users and sends all ether to a 
 
 
 ## Features to be implemented
-- ~~[X] create interface for Lum contract.~~
+- [X] create interface for Lum contract.
 - [ ] a creator should be able to create a group(specify number members and how long to pay users).
 - [ ] members should be able to join a group.
 - [ ] A group should have a balance.
