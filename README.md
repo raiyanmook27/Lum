@@ -1,6 +1,7 @@
 # Lum
 
-A smart contract that saves ether from groups of users and sends all ether to a random user for every specified time.
+ A smart contract that creates a group of users who can deposit funds into contract
+ daily and every week a member of the group is sent all the funds, the process starts again.
 
 
 ## Features to be implemented
