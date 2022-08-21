@@ -16,13 +16,14 @@ interface ILum {
     event GroupJoined(bytes32 indexed groupId, address indexed _member);
 
     /**
-     * @dev creates a group.
+     * @notice creates a group.
      *
-     * @param name -> name of group.
+     * @dev use a keccak256 to hash the name,the caller and number of
+     * members as a group id.
      *
      * Emits a {GroupCreated} event.
      */
-    function createGroup(string memory name) external;
+    function createGroup() external;
 
     /**
      * @dev a member joins a group.
