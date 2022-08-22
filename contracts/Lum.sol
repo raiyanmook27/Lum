@@ -19,7 +19,7 @@ contract Lum is ILum {
     /**************STRUCTS****************/
     struct Group {
         bytes32 id;
-        bytes32 name;
+        string name;
         uint8 number_of_members;
     }
 
@@ -29,9 +29,10 @@ contract Lum is ILum {
     }
 
     /********STATE VARIABLES***********/
-    mapping(bytes32 => Group) private groups;
+    bytes32[] private groups;
+    mapping(bytes32 => Group) private groupsById;
     mapping(bytes32 => Member[]) private group_mems;
-    bytes32 private _name;
+    //bytes32 private _name;
     uint8 private constant NUM_MEMBERS = 4;
 
     //string private immutable i_duration;
@@ -43,7 +44,7 @@ contract Lum is ILum {
      * @param _id -> id of a specific group.
      */
     modifier checkGroupExist(bytes32 _id) {
-        require(groups[_id].id == _id, "Group doesn't exist.....");
+        require(groupsById[_id].id == _id, "Group doesn't exist.....");
         _;
     }
 
@@ -53,29 +54,42 @@ contract Lum is ILum {
      * @param _id -> id of a specific group.
      */
     modifier checkMembersFull(bytes32 _id) {
-        require(group_mems[_id].length < groups[_id].number_of_members, "Group is full...");
+        require(group_mems[_id].length < groupsById[_id].number_of_members, "Group is full...");
         _;
     }
 
-    /**
-     * @dev Sets the value {name}.
-     *
-     * @notice name is immutable can only be set once during
-     * construction
-     */
-    constructor(bytes32 name) {
-        _name = name;
-    }
+    // /**
+    //  * @dev Sets the value {name}.
+    //  *
+    //  * @notice name is immutable can only be set once during
+    //  * construction
+    //  */
+    // constructor(bytes32 name) {
+    //     _name = name;
+    // }
 
     /**
      * @dev see {ILum.sol-createGroup}.
      *
      */
-    function createGroup() external override {
+    function createGroup(string memory _name) external override {
         bytes32 id = keccak256(abi.encode(_name, msg.sender, NUM_MEMBERS));
         //check if it calls saves gas
-        groups[id] = Group(id, _name, NUM_MEMBERS);
+        groups.push(id);
+        groupsById[id] = Group(id, _name, NUM_MEMBERS);
         group_mems[id].push(Member(msg.sender, STATUS.NOT_PAID));
         emit GroupCreated(id);
+    }
+
+    function numberOfGroups() external view returns (uint256) {
+        return groups.length;
+    }
+
+    function joinGroup(bytes32 group_id)
+        external
+        checkGroupExist(group_id)
+        checkMembersFull(group_id)
+    {
+        group_mems[group_id].push(Member(msg.sender, STATUS.NOT_PAID));
     }
 }

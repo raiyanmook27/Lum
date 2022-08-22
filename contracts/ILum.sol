@@ -23,7 +23,7 @@ interface ILum {
      *
      * Emits a {GroupCreated} event.
      */
-    function createGroup() external;
+    function createGroup(string memory name) external;
 
     /**
      * @dev a member joins a group.
@@ -34,10 +34,10 @@ interface ILum {
      */
     // function joinGroup(bytes32 groupId) external;
 
-    // /**
-    //  * @dev Returns the number of groups.
-    //  */
-    // function numberOfGroups() external view returns (uint256);
+    /**
+     * @dev Returns the number of groups.
+     */
+    function numberOfGroups() external view returns (uint256);
 
     // /**
     //  * @dev Returns the details of a group based on 'groupId'.

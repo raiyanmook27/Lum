@@ -1,0 +1,4 @@
+Problems faced
+
+* arrrays in mappings
+* length of mapping
