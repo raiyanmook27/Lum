@@ -2,6 +2,7 @@
 pragma solidity ^0.8.9;
 
 import "./ILum.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 
 /**
  * @dev * A contract that creates a group of users who can deposit funds into contract
@@ -9,7 +10,7 @@ import "./ILum.sol";
  * till every member of the group gets paid.
  *
  */
-contract Lum is ILum {
+contract Lum is Context, ILum {
     /***********ENUMS**********************/
     enum STATUS {
         PAID,
@@ -44,7 +45,7 @@ contract Lum is ILum {
      * @param _id -> id of a specific group.
      */
     modifier checkGroupExist(bytes32 _id) {
-        require(groupsById[_id].id == _id, "Group doesn't exist.....");
+        require(groupsById[_id].id == _id, "Group doesn't exist");
         _;
     }
 
@@ -54,7 +55,7 @@ contract Lum is ILum {
      * @param _id -> id of a specific group.
      */
     modifier checkMembersFull(bytes32 _id) {
-        require(group_mems[_id].length < groupsById[_id].number_of_members, "Group is full...");
+        require(group_mems[_id].length < groupsById[_id].number_of_members, "Group is full");
         _;
     }
 
@@ -81,15 +82,36 @@ contract Lum is ILum {
         emit GroupCreated(id);
     }
 
-    function numberOfGroups() external view returns (uint256) {
+    function numberOfGroups() external view override returns (uint256) {
         return groups.length;
     }
 
-    function joinGroup(bytes32 group_id)
+    function joinGroup(bytes32 groupId)
         external
-        checkGroupExist(group_id)
-        checkMembersFull(group_id)
+        override
+        checkGroupExist(groupId)
+        checkMembersFull(groupId)
     {
-        group_mems[group_id].push(Member(msg.sender, STATUS.NOT_PAID));
+        group_mems[groupId].push(Member(msg.sender, STATUS.NOT_PAID));
+        emit GroupJoined(groupId, msg.sender);
+    }
+
+    function getGroupId(uint256 num) external view override returns (bytes32) {
+        return groups[num];
+    }
+
+    function getNum_Members() external pure override returns (uint256) {
+        return NUM_MEMBERS;
+    }
+
+    // /**
+    //  * @dev Returns the details of a group based on 'groupId'.
+    //  */
+    function groupDetails(bytes32 groupId) external view returns (Group memory) {
+        return groupsById[groupId];
+    }
+
+    function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
+        return group_mems[groupId].length;
     }
 }

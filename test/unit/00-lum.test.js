@@ -1,27 +1,77 @@
-const { expect, assert } = require("chai")
+const { expect } = require("chai")
 const { ethers } = require("hardhat")
-
-describe("Lum Contract Tests.......", () => {
-    let lum, deployer
+describe("Lum Unit Test.", () => {
+    let lum
+    const id_const = "0xb771cd9cffecb27cf78b446990d845eb96f8b414f9bf010fa3e5368f06d92973"
     beforeEach(async () => {
-        /**
-         * @notice get a deployer
-         */
         accounts = await ethers.getSigners()
-
-        deployer = accounts[0]
-
-        const lumContract = await ethers.getContractFactory("Lum", deployer)
-
-        lum = await lumContract.deploy()
+        const LumContractInst = await ethers.getContractFactory("Lum")
+        lum = await LumContractInst.deploy()
     })
-    describe("createGroup", () => {
-        it("should create an group", async () => {
-            await lum.createGroup("Raiyan")
-            const num = expect(await lum.numberOfGroups()).to.equal(1)
+
+    describe("createGroup()", () => {
+        beforeEach(async () => {
+            await lum.createGroup("raiyan")
         })
-        it("should emit a Group Created", async () => {
-            await expect(lum.createGroup("Raiyan")).to.emit(lum, "GroupCreated")
+        it("should create an group id", async () => {
+            //console.log(await (await lum.groupDetails(id_const)).id, id_const)
+            expect(await (await lum.groupDetails(id_const)).id).to.equal(id_const)
+        })
+        it("should emit a Group created event", async function () {
+            await expect(lum.createGroup("raiyan")).to.emit(lum, "GroupCreated")
+        })
+    })
+    describe("numberOfGroups()", () => {
+        it("should return the number of groups", async function () {
+            await lum.createGroup("raiyan")
+            expect(await lum.numberOfGroups()).to.equal(1)
+        })
+    })
+    describe("getGroupId()", () => {
+        it("should return a group id", async function () {
+            await lum.createGroup("raiyan")
+            expect(await lum.getGroupId(0)).to.equal(id_const)
+        })
+    })
+    describe("getNum_Members()", () => {
+        it("should return a group id", async function () {
+            await lum.createGroup("raiyan")
+            expect(await lum.getNum_Members()).to.equal(4)
+        })
+    })
+
+    describe("joinGroup()", () => {
+        // check if group exist
+        it("should revert if group doesn't exist", async () => {
+            await lum.createGroup("raiyanM")
+            await expect(lum.joinGroup(id_const)).to.be.revertedWith("Group doesn't exist")
+        })
+        //check if members are full
+        it("should revert if group is full", async () => {
+            await lum.createGroup("raiyan")
+            const address2 = accounts[1]
+            const address3 = accounts[2]
+            const address4 = accounts[3]
+            const address5 = accounts[4]
+
+            await lum.connect(address2).joinGroup(id_const)
+            await lum.connect(address3).joinGroup(id_const)
+            await lum.connect(address4).joinGroup(id_const)
+
+            await expect(lum.connect(address5).joinGroup(id_const)).to.be.revertedWith(
+                "Group is full"
+            )
+        })
+        it("should join a group", async () => {
+            await lum.createGroup("raiyan")
+            const address2 = accounts[1]
+            await lum.connect(address2).joinGroup(id_const)
+
+            expect((await lum.NumberOfGroupMembers(id_const)).toNumber()).to.equal(2)
+        })
+        it("should emit a group joined event", async () => {
+            await lum.createGroup("raiyan")
+            await expect(lum.joinGroup(id_const)).to.emit(lum, "GroupJoined")
         })
     })
 })

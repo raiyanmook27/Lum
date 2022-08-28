@@ -32,7 +32,7 @@ interface ILum {
      *
      * Emits a {GroupJoined} event.
      */
-    // function joinGroup(bytes32 groupId) external;
+    function joinGroup(bytes32 groupId) external;
 
     /**
      * @dev Returns the number of groups.
@@ -40,12 +40,12 @@ interface ILum {
     function numberOfGroups() external view returns (uint256);
 
     // /**
-    //  * @dev Returns the details of a group based on 'groupId'.
-    //  */
-    // function groupDetails(bytes32 groupId) external view returns (uint256);
-
-    // /**
     //  * @dev Returns the number of members in a group based on 'groupId'.
     //  */
     // function numberOfMembers(bytes32 groupId) external view returns (uint256);
+    function getGroupId(uint256 num) external returns (bytes32);
+
+    function getNum_Members() external returns (uint256);
+
+    function NumberOfGroupMembers(bytes32 groupId) external view returns (uint256);
 }

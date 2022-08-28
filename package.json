@@ -6,6 +6,7 @@
   "author": "raiyanmook27 <raiyan.mook27@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "@openzeppelin/contracts": "^4.7.3",
     "hardhat": "^2.10.2"
   },
   "devDependencies": {
