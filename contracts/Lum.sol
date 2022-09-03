@@ -3,6 +3,12 @@ pragma solidity ^0.8.9;
 
 import "./ILum.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+/***************ERRORS****************/
+error Lum__CallerNonExistent();
+error Lum__CallerAlreadyPaid();
+error Lum__NotEnoughEth();
 
 /**
  * @dev * A contract that creates a group of users who can deposit funds into contract
@@ -10,7 +16,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
  * till every member of the group gets paid.
  *
  */
-contract Lum is Context, ILum {
+contract Lum is Context, ILum, ReentrancyGuard {
     /***********ENUMS**********************/
     enum STATUS {
         PAID,
@@ -25,7 +31,7 @@ contract Lum is Context, ILum {
     }
 
     struct Member {
-        address mem_Addy;
+        address mem_Address;
         STATUS paid_status;
     }
 
@@ -33,6 +39,7 @@ contract Lum is Context, ILum {
     bytes32[] private groups;
     mapping(bytes32 => Group) private groupsById;
     mapping(bytes32 => Member[]) private group_mems;
+    mapping(bytes32 => uint256) private group_balances;
     //bytes32 private _name;
     uint8 private constant NUM_MEMBERS = 4;
 
@@ -56,6 +63,40 @@ contract Lum is Context, ILum {
      */
     modifier checkMembersFull(bytes32 _id) {
         require(group_mems[_id].length < groupsById[_id].number_of_members, "Group is full");
+        _;
+    }
+
+    /**
+     * @dev check if caller is a member
+     */
+    modifier checkIfMemberExist(bytes32 groupId, address caller) {
+        uint256 mem_length = group_mems[groupId].length;
+        bool is_exist;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (group_mems[groupId][i].mem_Address == caller) {
+                is_exist = true;
+            }
+        }
+        if (!is_exist) {
+            revert Lum__CallerNonExistent();
+        }
+        _;
+    }
+
+    /**
+     * @dev check if caller already paid
+     */
+    modifier checkIfMemberAlreadyPaid(bytes32 groupId, address caller) {
+        uint256 mem_length = group_mems[groupId].length;
+        bool has_paid;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (group_mems[groupId][i].paid_status == STATUS.PAID) {
+                has_paid = true;
+            }
+        }
+        if (has_paid) {
+            revert Lum__CallerNonExistent();
+        }
         _;
     }
 
@@ -96,6 +137,36 @@ contract Lum is Context, ILum {
         emit GroupJoined(groupId, msg.sender);
     }
 
+    function depositFunds(bytes32 groupId)
+        public
+        payable
+        override
+        nonReentrant
+        checkGroupExist(groupId)
+        checkIfMemberExist(groupId, msg.sender)
+        checkIfMemberAlreadyPaid(groupId, msg.sender)
+    {
+        uint256 amount = msg.value;
+        if (amount == 0) {
+            revert Lum__NotEnoughEth();
+        }
+
+        group_balances[groupId] += amount;
+
+        paymentStatus(groupId, msg.sender);
+
+        emit GroupFunded(msg.sender, groupId, msg.value);
+    }
+
+    function paymentStatus(bytes32 groupId, address memberAddress) private {
+        uint256 mem_length = group_mems[groupId].length;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (group_mems[groupId][i].mem_Address == memberAddress) {
+                group_mems[groupId][i].paid_status = STATUS.PAID;
+            }
+        }
+    }
+
     function getGroupId(uint256 num) external view override returns (bytes32) {
         return groups[num];
     }
@@ -113,5 +184,9 @@ contract Lum is Context, ILum {
 
     function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
         return group_mems[groupId].length;
+    }
+
+    function balanceOf(bytes32 groupId) external view override returns (uint256) {
+        return group_balances[groupId];
     }
 }

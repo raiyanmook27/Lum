@@ -16,6 +16,11 @@ interface ILum {
     event GroupJoined(bytes32 indexed groupId, address indexed _member);
 
     /**
+     * @dev Emitted when a members funds the group.
+     */
+    event GroupFunded(address indexed member, bytes32 indexed groupId, uint256 indexed amount);
+
+    /**
      * @notice creates a group.
      *
      * @dev use a keccak256 to hash the name,the caller and number of
@@ -24,6 +29,12 @@ interface ILum {
      * Emits a {GroupCreated} event.
      */
     function createGroup(string memory name) external;
+
+    /**
+     *@dev deposit funds to Lum contract
+     *
+     */
+    function depositFunds(bytes32 groupId) external payable;
 
     /**
      * @dev a member joins a group.
@@ -48,4 +59,10 @@ interface ILum {
     function getNum_Members() external returns (uint256);
 
     function NumberOfGroupMembers(bytes32 groupId) external view returns (uint256);
+
+    /**
+     * @dev return the balance of a group with id
+     * @param groupId -> an id of a group
+     */
+    function balanceOf(bytes32 groupId) external view returns (uint256);
 }

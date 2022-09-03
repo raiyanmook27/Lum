@@ -14,7 +14,6 @@ describe("Lum Unit Test.", () => {
             await lum.createGroup("raiyan")
         })
         it("should create an group id", async () => {
-            //console.log(await (await lum.groupDetails(id_const)).id, id_const)
             expect(await (await lum.groupDetails(id_const)).id).to.equal(id_const)
         })
         it("should emit a Group created event", async function () {
@@ -66,7 +65,6 @@ describe("Lum Unit Test.", () => {
             await lum.createGroup("raiyan")
             const address2 = accounts[1]
             await lum.connect(address2).joinGroup(id_const)
-
             expect((await lum.NumberOfGroupMembers(id_const)).toNumber()).to.equal(2)
         })
         it("should emit a group joined event", async () => {
