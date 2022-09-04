@@ -1,12 +1,13 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
 describe("Lum Unit Test.", () => {
-    let lum
+    let lum, sendValue
     const id_const = "0xb771cd9cffecb27cf78b446990d845eb96f8b414f9bf010fa3e5368f06d92973"
     beforeEach(async () => {
         accounts = await ethers.getSigners()
         const LumContractInst = await ethers.getContractFactory("Lum")
         lum = await LumContractInst.deploy()
+        sendValue = ethers.utils.parseEther("1.0")
     })
 
     describe("createGroup()", () => {
@@ -70,6 +71,44 @@ describe("Lum Unit Test.", () => {
         it("should emit a group joined event", async () => {
             await lum.createGroup("raiyan")
             await expect(lum.joinGroup(id_const)).to.emit(lum, "GroupJoined")
+        })
+    })
+    describe("DepositFunds()", () => {
+        beforeEach(async () => {
+            await lum.createGroup("raiyan")
+        })
+        it("should revert if caller isn't a member", async function () {
+            await expect(
+                lum.connect(accounts[1]).depositFunds(id_const)
+            ).to.be.revertedWithCustomError(lum, "Lum__CallerNonExistent")
+        })
+        it("should revert if ether not enough", async () => {
+            await expect(lum.depositFunds(id_const)).to.be.revertedWithCustomError(
+                lum,
+                "Lum__NotEnoughEth"
+            )
+        })
+        it("should revert if member already paid", async function () {
+            await lum.depositFunds(id_const, { value: sendValue })
+
+            await expect(lum.depositFunds(id_const), {
+                value: sendValue,
+            }).to.be.revertedWithCustomError(lum, "Lum__CallerAlreadyPaid")
+        })
+        it("should deposit funds to the group account", async function () {
+            await lum.depositFunds(id_const, { value: sendValue })
+
+            expect(await lum.balanceOf(id_const)).to.equal(sendValue)
+        })
+        it("should update member payment status", async () => {
+            await lum.depositFunds(id_const, { value: sendValue })
+            expect(await lum.getMemberPaymentStatus(accounts[0].address, id_const)).to.equal(0)
+        })
+        it("should emit an event when deposit is successful", async () => {
+            await expect(lum.depositFunds(id_const, { value: sendValue })).to.emit(
+                lum,
+                "GroupFunded"
+            )
         })
     })
 })

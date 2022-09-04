@@ -95,7 +95,7 @@ contract Lum is Context, ILum, ReentrancyGuard {
             }
         }
         if (has_paid) {
-            revert Lum__CallerNonExistent();
+            revert Lum__CallerAlreadyPaid();
         }
         _;
     }
@@ -146,19 +146,31 @@ contract Lum is Context, ILum, ReentrancyGuard {
         checkIfMemberExist(groupId, msg.sender)
         checkIfMemberAlreadyPaid(groupId, msg.sender)
     {
-        uint256 amount = msg.value;
-        if (amount == 0) {
+        if (msg.value == 0) {
             revert Lum__NotEnoughEth();
         }
 
-        group_balances[groupId] += amount;
+        group_balances[groupId] += msg.value;
 
-        paymentStatus(groupId, msg.sender);
+        UpdatePaymentStatus(groupId, msg.sender);
 
         emit GroupFunded(msg.sender, groupId, msg.value);
     }
 
-    function paymentStatus(bytes32 groupId, address memberAddress) private {
+    function getMemberPaymentStatus(address member_Address, bytes32 groupId)
+        public
+        view
+        returns (STATUS paymentStat)
+    {
+        uint256 mem_length = group_mems[groupId].length;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (group_mems[groupId][i].mem_Address == member_Address) {
+                paymentStat = group_mems[groupId][i].paid_status;
+            }
+        }
+    }
+
+    function UpdatePaymentStatus(bytes32 groupId, address memberAddress) private {
         uint256 mem_length = group_mems[groupId].length;
         for (uint256 i = 0; i < mem_length; ++i) {
             if (group_mems[groupId][i].mem_Address == memberAddress) {
