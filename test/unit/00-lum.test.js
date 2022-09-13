@@ -1,12 +1,15 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
 describe("Lum Unit Test.", () => {
-    let lum, sendValue
+    let lum, sendValue, vrfCoordinatorMock
     const id_const = "0xb771cd9cffecb27cf78b446990d845eb96f8b414f9bf010fa3e5368f06d92973"
     beforeEach(async () => {
         accounts = await ethers.getSigners()
         const LumContractInst = await ethers.getContractFactory("Lum")
+        const vrfCoordinatorMockInst = await ethers.getContractFactory("VRFCoordinatorV2Mock")
+
         lum = await LumContractInst.deploy()
+        vrfCoordinatorMock = await vrfCoordinatorMockInst.deploy()
         sendValue = ethers.utils.parseEther("1.0")
     })
 
@@ -108,6 +111,18 @@ describe("Lum Unit Test.", () => {
                 lum,
                 "GroupFunded"
             )
+        })
+    })
+
+    describe("FullfilRandomWords", () => {
+        beforeEach(async () => {
+            await lum.createGroup("raiyan")
+        })
+
+        it.only("picks a lummer address", async () => {
+            for (let i = 1; i < 4; i++) {
+                lum.connect(accounts[i]).joinGroup(id_const)
+            }
         })
     })
 })

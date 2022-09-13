@@ -26,6 +26,11 @@ interface ILum {
     event LumStarted(bytes32 indexed groupId);
 
     /**
+     * @dev
+     */
+    event LummerReceiver(address indexed lummerAddress);
+
+    /**
      * @notice creates a group.
      *
      * @dev use a keccak256 to hash the name,the caller and number of
@@ -58,7 +63,7 @@ interface ILum {
     /**
      * @dev starts the lum process.
      */
-    function startLum() external;
+    function startLum(bytes32 groupId) external;
 
     // /**
     //  * @dev Returns the number of members in a group based on 'groupId'.

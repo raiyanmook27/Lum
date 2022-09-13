@@ -4,6 +4,8 @@ pragma solidity ^0.8.9;
 import "./ILum.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "hardhat/console.sol";
 
 /***************ERRORS****************/
@@ -17,7 +19,7 @@ error Lum__NotEnoughEth();
  * till every member of the group gets paid.
  *
  */
-contract Lum is Context, ILum, ReentrancyGuard {
+contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2 {
     /***********ENUMS**********************/
     enum STATUS {
         PAID,
@@ -42,9 +44,25 @@ contract Lum is Context, ILum, ReentrancyGuard {
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
     uint8 private constant NUM_MEMBERS = 4;
-    uint256 private LumDuration = 10 seconds;
+    address private lummerAddress;
+    //uint256 private immutable i_lumDuration;
+    // uint256 private immutable i_interval;
+    uint256 private s_lastTimeStamp;
+    bytes32 private s_groupId;
+
+    // Chainlink VRF Variables
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
+    uint256 private s_requestId;
 
     //string private immutable i_duration;
+
+    /*********EVENTS**************/
+    event IdRequested(uint256 indexed requestId);
 
     /***********MODIFIERS***********/
     /**
@@ -108,11 +126,53 @@ contract Lum is Context, ILum, ReentrancyGuard {
     //  * @notice name is immutable can only be set once during
     //  * construction
     //  */
-    // constructor(bytes32 name) {
-    //     _name = name;
-    // }
+    constructor(
+        address vrfCoordinatorV2,
+        uint64 subscriptionId,
+        bytes32 gasLane, // keyHash
+        uint256 interval,
+        uint256 entranceFee,
+        uint32 callbackGasLimit
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_gasLane = gasLane;
+        //i_interval = interval;
+        i_subscriptionId = subscriptionId;
+        //s_lastTimeStamp = block.timestamp;
+        i_callbackGasLimit = callbackGasLimit;
+    }
 
     /**
+     *
+     * @dev see {ILum.sol-startLum}.
+     */
+    function startLum(bytes32 groupId) external override {
+        s_groupId = groupId;
+    }
+
+    function requestRandomWords() external {
+        s_requestId = i_vrfCoordinator.requestRandomWords(
+            i_gasLane,
+            i_subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            i_callbackGasLimit,
+            NUM_WORDS
+        );
+        emit IdRequested(s_requestId);
+    }
+
+    function fulfillRandomWords(
+        uint256, /* requestId */
+        uint256[] memory randomWords
+    ) internal override {
+        uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
+
+        //emit LummerReceiver(s_group_mems[s_groupId][indexOfLummer].mem_Address);
+        lummerAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
+    }
+
+    /**
+     *
      * @dev see {ILum.sol-createGroup}.
      *
      */
@@ -124,11 +184,6 @@ contract Lum is Context, ILum, ReentrancyGuard {
         s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID));
         emit GroupCreated(id);
     }
-
-    /**
-     * @dev see {ILum.sol-startLum}.
-     */
-    function startLum() external override {}
 
     function numberOfGroups() external view override returns (uint256) {
         return s_group.length;
@@ -211,5 +266,9 @@ contract Lum is Context, ILum, ReentrancyGuard {
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
         return s_group_balances[groupId];
+    }
+
+    function getLummAddress() external view returns (address) {
+        return lummerAddress;
     }
 }
