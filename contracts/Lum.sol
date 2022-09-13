@@ -41,8 +41,8 @@ contract Lum is Context, ILum, ReentrancyGuard {
     mapping(bytes32 => Group) private s_groupById;
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
-    //bytes32 private _name;
     uint8 private constant NUM_MEMBERS = 4;
+    uint256 private LumDuration = 10 seconds;
 
     //string private immutable i_duration;
 
@@ -124,6 +124,11 @@ contract Lum is Context, ILum, ReentrancyGuard {
         s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID));
         emit GroupCreated(id);
     }
+
+    /**
+     * @dev see {ILum.sol-startLum}.
+     */
+    function startLum() external override {}
 
     function numberOfGroups() external view override returns (uint256) {
         return s_group.length;

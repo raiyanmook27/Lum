@@ -21,6 +21,11 @@ interface ILum {
     event GroupFunded(address indexed member, bytes32 indexed groupId, uint256 indexed amount);
 
     /**
+     * @dev Emitted when lum starts.
+     */
+    event LumStarted(bytes32 indexed groupId);
+
+    /**
      * @notice creates a group.
      *
      * @dev use a keccak256 to hash the name,the caller and number of
@@ -49,6 +54,11 @@ interface ILum {
      * @dev Returns the number of groups.
      */
     function numberOfGroups() external view returns (uint256);
+
+    /**
+     * @dev starts the lum process.
+     */
+    function startLum() external;
 
     // /**
     //  * @dev Returns the number of members in a group based on 'groupId'.
