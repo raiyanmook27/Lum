@@ -4,6 +4,7 @@ pragma solidity ^0.8.9;
 import "./ILum.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "hardhat/console.sol";
 
 /***************ERRORS****************/
 error Lum__CallerNonExistent();
@@ -36,10 +37,10 @@ contract Lum is Context, ILum, ReentrancyGuard {
     }
 
     /********STATE VARIABLES***********/
-    bytes32[] private groups;
-    mapping(bytes32 => Group) private groupsById;
-    mapping(bytes32 => Member[]) private group_mems;
-    mapping(bytes32 => uint256) private group_balances;
+    bytes32[] private s_group;
+    mapping(bytes32 => Group) private s_groupById;
+    mapping(bytes32 => Member[]) private s_group_mems;
+    mapping(bytes32 => uint256) private s_group_balances;
     //bytes32 private _name;
     uint8 private constant NUM_MEMBERS = 4;
 
@@ -52,7 +53,7 @@ contract Lum is Context, ILum, ReentrancyGuard {
      * @param _id -> id of a specific group.
      */
     modifier checkGroupExist(bytes32 _id) {
-        require(groupsById[_id].id == _id, "Group doesn't exist");
+        require(s_groupById[_id].id == _id, "Group doesn't exist");
         _;
     }
 
@@ -62,7 +63,7 @@ contract Lum is Context, ILum, ReentrancyGuard {
      * @param _id -> id of a specific group.
      */
     modifier checkMembersFull(bytes32 _id) {
-        require(group_mems[_id].length < groupsById[_id].number_of_members, "Group is full");
+        require(s_group_mems[_id].length < s_groupById[_id].number_of_members, "Group is full");
         _;
     }
 
@@ -70,10 +71,10 @@ contract Lum is Context, ILum, ReentrancyGuard {
      * @dev check if caller is a member
      */
     modifier checkIfMemberExist(bytes32 groupId, address caller) {
-        uint256 mem_length = group_mems[groupId].length;
+        uint256 mem_length = s_group_mems[groupId].length;
         bool is_exist;
         for (uint256 i = 0; i < mem_length; ++i) {
-            if (group_mems[groupId][i].mem_Address == caller) {
+            if (s_group_mems[groupId][i].mem_Address == caller) {
                 is_exist = true;
             }
         }
@@ -87,10 +88,11 @@ contract Lum is Context, ILum, ReentrancyGuard {
      * @dev check if caller already paid
      */
     modifier checkIfMemberAlreadyPaid(bytes32 groupId, address caller) {
-        uint256 mem_length = group_mems[groupId].length;
+        Member[] memory members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
         bool has_paid;
         for (uint256 i = 0; i < mem_length; ++i) {
-            if (group_mems[groupId][i].paid_status == STATUS.PAID) {
+            if (members[i].mem_Address == caller && members[i].paid_status == STATUS.PAID) {
                 has_paid = true;
             }
         }
@@ -115,16 +117,16 @@ contract Lum is Context, ILum, ReentrancyGuard {
      *
      */
     function createGroup(string memory _name) external override {
-        bytes32 id = keccak256(abi.encode(_name, msg.sender, NUM_MEMBERS));
+        bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
         //check if it calls saves gas
-        groups.push(id);
-        groupsById[id] = Group(id, _name, NUM_MEMBERS);
-        group_mems[id].push(Member(msg.sender, STATUS.NOT_PAID));
+        s_group.push(id);
+        s_groupById[id] = Group(id, _name, NUM_MEMBERS);
+        s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID));
         emit GroupCreated(id);
     }
 
     function numberOfGroups() external view override returns (uint256) {
-        return groups.length;
+        return s_group.length;
     }
 
     function joinGroup(bytes32 groupId)
@@ -133,8 +135,8 @@ contract Lum is Context, ILum, ReentrancyGuard {
         checkGroupExist(groupId)
         checkMembersFull(groupId)
     {
-        group_mems[groupId].push(Member(msg.sender, STATUS.NOT_PAID));
-        emit GroupJoined(groupId, msg.sender);
+        s_group_mems[groupId].push(Member(_msgSender(), STATUS.NOT_PAID));
+        emit GroupJoined(groupId, _msgSender());
     }
 
     function depositFunds(bytes32 groupId)
@@ -150,7 +152,7 @@ contract Lum is Context, ILum, ReentrancyGuard {
             revert Lum__NotEnoughEth();
         }
 
-        group_balances[groupId] += msg.value;
+        s_group_balances[groupId] += msg.value;
 
         UpdatePaymentStatus(groupId, msg.sender);
 
@@ -162,25 +164,29 @@ contract Lum is Context, ILum, ReentrancyGuard {
         view
         returns (STATUS paymentStat)
     {
-        uint256 mem_length = group_mems[groupId].length;
+        Member[] storage members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
+
         for (uint256 i = 0; i < mem_length; ++i) {
-            if (group_mems[groupId][i].mem_Address == member_Address) {
-                paymentStat = group_mems[groupId][i].paid_status;
+            if (members[i].mem_Address == member_Address) {
+                paymentStat = members[i].paid_status;
             }
         }
     }
 
     function UpdatePaymentStatus(bytes32 groupId, address memberAddress) private {
-        uint256 mem_length = group_mems[groupId].length;
+        Member[] storage members = s_group_mems[groupId];
+
+        uint256 mem_length = members.length;
         for (uint256 i = 0; i < mem_length; ++i) {
-            if (group_mems[groupId][i].mem_Address == memberAddress) {
-                group_mems[groupId][i].paid_status = STATUS.PAID;
+            if (members[i].mem_Address == memberAddress) {
+                members[i].paid_status = STATUS.PAID;
             }
         }
     }
 
     function getGroupId(uint256 num) external view override returns (bytes32) {
-        return groups[num];
+        return s_group[num];
     }
 
     function getNum_Members() external pure override returns (uint256) {
@@ -191,14 +197,14 @@ contract Lum is Context, ILum, ReentrancyGuard {
     //  * @dev Returns the details of a group based on 'groupId'.
     //  */
     function groupDetails(bytes32 groupId) external view returns (Group memory) {
-        return groupsById[groupId];
+        return s_groupById[groupId];
     }
 
     function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
-        return group_mems[groupId].length;
+        return s_group_mems[groupId].length;
     }
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
-        return group_balances[groupId];
+        return s_group_balances[groupId];
     }
 }

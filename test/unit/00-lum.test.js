@@ -88,19 +88,18 @@ describe("Lum Unit Test.", () => {
                 "Lum__NotEnoughEth"
             )
         })
-        it("should revert if member already paid", async function () {
+        it.only("should revert if member already paid", async function () {
             await lum.depositFunds(id_const, { value: sendValue })
-
-            await expect(lum.depositFunds(id_const), {
-                value: sendValue,
-            }).to.be.revertedWithCustomError(lum, "Lum__CallerAlreadyPaid")
+            await expect(
+                lum.depositFunds(id_const, { value: sendValue })
+            ).to.be.revertedWithCustomError(lum, "Lum__CallerAlreadyPaid")
         })
         it("should deposit funds to the group account", async function () {
             await lum.depositFunds(id_const, { value: sendValue })
 
             expect(await lum.balanceOf(id_const)).to.equal(sendValue)
         })
-        it("should update member payment status", async () => {
+        it.only("should update member payment status", async () => {
             await lum.depositFunds(id_const, { value: sendValue })
             expect(await lum.getMemberPaymentStatus(accounts[0].address, id_const)).to.equal(0)
         })
