@@ -11,6 +11,7 @@
 - [X] A group should have a balance.
 - [X] A member should be able to pay into a groups account.
 - [X] picks a user at random using Chainlinks VRF.
+- [ ] use multi-sig to all users sign before ether is sent
 - [ ] use Chainlinks Keepers to send ether to the random user.
 
 
