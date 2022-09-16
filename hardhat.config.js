@@ -23,7 +23,7 @@ module.exports = {
             chainId: 31337,
             blockConfirmations: 1,
         },
-        rinkeby: {
+        goerli: {
             chainId: 4,
             url: RINKEBY_RPC_URL,
             accounts: [PRIVATE_KEY],

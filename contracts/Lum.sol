@@ -15,6 +15,7 @@ error Lum__CallerAlreadyPaid();
 error Lum__NotEnoughEth();
 error Lum__UpkeepNotNeeded();
 error Lum_NotAllMembersPaid();
+error Lum__NotAuthorized();
 
 /**
  * @title Lum
@@ -53,6 +54,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     uint256 private immutable i_interval;
     uint256 private s_lastTimeStamp;
     bytes32 private s_groupId;
+    address private groupCreator;
 
     // Chainlink VRF Variables
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
@@ -125,6 +127,13 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         _;
     }
 
+    modifier onlyCreator() {
+        if (_msgSender() != groupCreator) {
+            revert Lum__NotAuthorized();
+        }
+        _;
+    }
+
     // /**
     //  * @dev Sets the value {name}.
     //  *
@@ -150,7 +159,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      *
      * @dev see {ILum.sol-startLum}.
      */
-    function startLum(bytes32 groupId) external override {
+    function startLum(bytes32 groupId) external override onlyCreator {
         s_groupId = groupId;
     }
 
@@ -218,7 +227,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     function fulfillRandomWords(
         uint256, /* requestId */
         uint256[] memory randomWords
-    ) internal override {
+    ) internal override nonReentrant {
         uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
         s_lastTimeStamp = block.timestamp;
         lummerAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
@@ -232,6 +241,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      *
      */
     function createGroup(string memory _name) external override {
+        groupCreator = _msgSender();
         bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
         //check if it calls saves gas
         s_group.push(id);
@@ -258,7 +268,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         public
         payable
         override
-        nonReentrant
         checkGroupExist(groupId)
         checkIfMemberExist(groupId, msg.sender)
         checkIfMemberAlreadyPaid(groupId, msg.sender)
@@ -333,9 +342,5 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
 
     function get_TimeStamp() public view returns (uint256) {
         return s_lastTimeStamp;
-    }
-
-    function checkGroupIdExist(bytes32 groupId) private view returns (bool) {
-        return s_groupById[groupId].id == groupId;
     }
 }

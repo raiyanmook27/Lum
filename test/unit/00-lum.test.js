@@ -161,16 +161,16 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               beforeEach(async function () {
                   await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
                   await network.provider.send("evm_mine", [])
-                  await lum.startLum(id_const)
               })
               it("can only be called after performUpKeep", async function () {
                   await expect(
                       vrfCoordinatorMock.fulfillRandomWords(0, lum.address)
                   ).to.be.revertedWith("nonexistent request")
               })
-              it("picks a user address at random from a group", async () => {
+              it.only("picks a user address at random from a group", async () => {
                   await lum.createGroup("raiyan")
                   await lum.depositFunds(id_const, { value: sendValue })
+                  await lum.startLum(id_const)
                   accounts = await ethers.getSigners()
                   const lummers = 4
                   console.log(`Lummer Address ${0} : ${accounts[0].address}`)
