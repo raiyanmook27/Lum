@@ -8,9 +8,9 @@ require("hardhat-gas-reporter")
 require("hardhat-contract-sizer")
 require("dotenv").config()
 
-const RINKEBY_RPC_URL =
-    process.env.RINKEBY_RPC_URL ||
-    "https://eth-rinkeby.alchemyapi.io/v2/qHe54-rytGu8yNd0iCKHs175dNHfl3PN"
+const GOERLI_RPC_URL =
+    process.env.GOERLI_RPC_URL ||
+    "https://eth-goerli.g.alchemy.com/v2/khe9wSyjT2ROTbcRUXX5Zpe6HDXHvq7t"
 
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x"
 /** @type import('hardhat/config').HardhatUserConfig */
@@ -24,8 +24,8 @@ module.exports = {
             blockConfirmations: 1,
         },
         goerli: {
-            chainId: 4,
-            url: RINKEBY_RPC_URL,
+            chainId: 5,
+            url: GOERLI_RPC_URL,
             accounts: [PRIVATE_KEY],
         },
     },
