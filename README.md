@@ -10,6 +10,7 @@
 - [X] members should be able to join a group.
 - [X] A group should have a balance.
 - [X] A member should be able to pay into a groups account.
-- [ ] contract should send all ether to a specific member at every stipulated time.
+- [X] picks a user at random using Chainlinks VRF.
+- [ ] use Chainlinks Keepers to send ether to the random user.
 
 
