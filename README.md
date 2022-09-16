@@ -14,3 +14,12 @@
 - [ ] use Chainlinks Keepers to send ether to the random user.
 
 
+# Usage 
+
+## Deploy
+> yarn hardhat deploy
+
+## Testing 
+> yarn hardhat test
+
+
