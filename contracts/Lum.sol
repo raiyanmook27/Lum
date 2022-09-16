@@ -4,20 +4,27 @@ pragma solidity ^0.8.9;
 import "./ILum.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "hardhat/console.sol";
 
 /***************ERRORS****************/
 error Lum__CallerNonExistent();
 error Lum__CallerAlreadyPaid();
 error Lum__NotEnoughEth();
+error Lum__UpkeepNotNeeded();
+error Lum_NotAllMembersPaid();
 
 /**
+ * @title Lum
  * @dev * A contract that creates a group of users who can deposit funds into contract
  * daily and every week a member of the group is sent all the funds, the process starts again.
  * till every member of the group gets paid.
+ * @author Raiyan Mukhtar
  *
  */
-contract Lum is Context, ILum, ReentrancyGuard {
+contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
     /***********ENUMS**********************/
     enum STATUS {
         PAID,
@@ -42,9 +49,25 @@ contract Lum is Context, ILum, ReentrancyGuard {
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
     uint8 private constant NUM_MEMBERS = 4;
-    uint256 private LumDuration = 10 seconds;
+    address private lummerAddress;
+    uint256 private immutable i_interval;
+    uint256 private s_lastTimeStamp;
+    bytes32 private s_groupId;
+
+    // Chainlink VRF Variables
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private constant NUM_WORDS = 1;
+    uint256 private s_requestId;
 
     //string private immutable i_duration;
+
+    /*********EVENTS**************/
+    event IdRequested(uint256 indexed requestId);
+    event lummerAddressPicked(address indexed lumAddress);
 
     /***********MODIFIERS***********/
     /**
@@ -108,11 +131,103 @@ contract Lum is Context, ILum, ReentrancyGuard {
     //  * @notice name is immutable can only be set once during
     //  * construction
     //  */
-    // constructor(bytes32 name) {
-    //     _name = name;
-    // }
+    constructor(
+        address vrfCoordinatorV2,
+        uint64 subscriptionId,
+        bytes32 gasLane, // keyHash
+        uint256 interval,
+        uint32 callbackGasLimit
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_gasLane = gasLane;
+        i_interval = interval;
+        i_subscriptionId = subscriptionId;
+        s_lastTimeStamp = block.timestamp;
+        i_callbackGasLimit = callbackGasLimit;
+    }
 
     /**
+     *
+     * @dev see {ILum.sol-startLum}.
+     */
+    function startLum(bytes32 groupId) external override {
+        s_groupId = groupId;
+    }
+
+    function allMembersPaymentStatus(bytes32 groupId) internal view returns (bool) {
+        Member[] memory members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
+        uint256 mem_count;
+        for (uint256 i = 0; i < mem_length; i++) {
+            if (members[i].paid_status == STATUS.PAID) {
+                mem_count++;
+            }
+        }
+        if (mem_count == mem_length) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /***
+     * @dev This is the function the chainlink Keeper nodes call
+     * they check for if 'UpKeep' returns true.
+     * The follwing should be true inorder to return true.
+     * 1. The time interval should have passed.
+     * 2. subscription is funded.
+     * 3. group exist
+     * 4. all members have paid
+     */
+    function checkUpkeep(
+        //calldata doesnt work with bytes
+        bytes memory /*checkData*/
+    )
+        public
+        override
+        returns (
+            bool upkeepNeeded,
+            bytes memory /*performData*/
+        )
+    {
+        //check time elapsed
+        bool groupExists = s_groupById[s_groupId].id == s_groupId;
+        bool hasMembersPaid = allMembersPaymentStatus(s_groupId);
+        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
+        upkeepNeeded = (groupExists && hasMembersPaid && timePassed);
+    }
+
+    function performUpkeep(
+        bytes calldata /*performData*/
+    ) external override {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+
+        if (!upkeepNeeded) {
+            revert Lum__UpkeepNotNeeded();
+        }
+        s_requestId = i_vrfCoordinator.requestRandomWords(
+            i_gasLane,
+            i_subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            i_callbackGasLimit,
+            NUM_WORDS
+        );
+        emit IdRequested(s_requestId);
+    }
+
+    function fulfillRandomWords(
+        uint256, /* requestId */
+        uint256[] memory randomWords
+    ) internal override {
+        uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
+        s_lastTimeStamp = block.timestamp;
+        lummerAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
+
+        emit lummerAddressPicked(lummerAddress);
+    }
+
+    /**
+     *
      * @dev see {ILum.sol-createGroup}.
      *
      */
@@ -124,11 +239,6 @@ contract Lum is Context, ILum, ReentrancyGuard {
         s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID));
         emit GroupCreated(id);
     }
-
-    /**
-     * @dev see {ILum.sol-startLum}.
-     */
-    function startLum() external override {}
 
     function numberOfGroups() external view override returns (uint256) {
         return s_group.length;
@@ -211,5 +321,21 @@ contract Lum is Context, ILum, ReentrancyGuard {
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
         return s_group_balances[groupId];
+    }
+
+    function getLummAddress() external view returns (address) {
+        return lummerAddress;
+    }
+
+    function getInterval() public view returns (uint256) {
+        return i_interval;
+    }
+
+    function get_TimeStamp() public view returns (uint256) {
+        return s_lastTimeStamp;
+    }
+
+    function checkGroupIdExist(bytes32 groupId) private view returns (bool) {
+        return s_groupById[groupId].id == groupId;
     }
 }
