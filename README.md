@@ -17,9 +17,15 @@
 # Usage 
 
 ## Deploy
-> yarn hardhat deploy
+```
+yarn hardhat deploy
+
+```
 
 ## Testing 
-> yarn hardhat test
+```
+yarn hardhat test
+
+```
 
 
