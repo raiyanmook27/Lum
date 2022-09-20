@@ -8,6 +8,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "hardhat/console.sol";
+import "./MultiSig.sol";
 
 /***************ERRORS****************/
 error Lum__CallerNonExistent();
@@ -66,6 +67,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     uint256 private s_requestId;
 
     //string private immutable i_duration;
+    MultiSig multSig;
 
     /*********EVENTS**************/
     event IdRequested(uint256 indexed requestId);
@@ -161,6 +163,11 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      */
     function startLum(bytes32 groupId) external override onlyCreator {
         s_groupId = groupId;
+        //get owners
+    }
+
+    function setMultiSig(address _multiSig) external {
+        multSig = MultiSig(_multiSig);
     }
 
     function allMembersPaymentStatus(bytes32 groupId) internal view returns (bool) {
@@ -326,6 +333,16 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
 
     function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
         return s_group_mems[groupId].length;
+    }
+
+    function getMembersAddress(bytes32 groupId) public view returns (address[] memory) {
+        address[] memory ownersAddress = new address[](4);
+        uint256 length = s_group_mems[groupId].length;
+        Member[] memory members = s_group_mems[groupId];
+        for (uint256 i = 0; i < length; i++) {
+            ownersAddress[i] = members[i].mem_Address;
+        }
+        return ownersAddress;
     }
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
