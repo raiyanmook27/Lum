@@ -46,6 +46,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     }
 
     /********STATE VARIABLES***********/
+    //change mappings to open Zepellins EnumerableMap
     bytes32[] private s_group;
     mapping(bytes32 => Group) private s_groupById;
     mapping(bytes32 => Member[]) private s_group_mems;
