@@ -13,6 +13,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               await deployments.fixture(["all"])
               lum = await ethers.getContract("Lum", deployer)
               vrfCoordinatorMock = await ethers.getContract("VRFCoordinatorV2Mock", deployer)
+
               sendValue = ethers.utils.parseEther("1.0")
               interval = await lum.getInterval()
           })
@@ -25,30 +26,30 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
           describe("createGroup()", () => {
               beforeEach(async () => {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
               })
               it("should create an group id", async () => {
                   expect(await (await lum.groupDetails(id_const)).id).to.equal(id_const)
               })
               it("should emit a Group created event", async function () {
-                  await expect(lum.createGroup("raiyan")).to.emit(lum, "GroupCreated")
+                  await expect(lum.createGroup("raiyan", sendValue)).to.emit(lum, "GroupCreated")
               })
           })
           describe("numberOfGroups()", () => {
               it("should return the number of groups", async function () {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   expect(await lum.numberOfGroups()).to.equal(1)
               })
           })
           describe("getGroupId()", () => {
               it("should return a group id", async function () {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   expect(await lum.getGroupId(0)).to.equal(id_const)
               })
           })
           describe("getNum_Members()", () => {
               it("should return a group id", async function () {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   expect(await lum.getNum_Members()).to.equal(4)
               })
           })
@@ -59,12 +60,12 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
               // check if group exist
               it("should revert if group doesn't exist", async () => {
-                  await lum.createGroup("raiyanM")
+                  await lum.createGroup("raiyanM", 1)
                   await expect(lum.joinGroup(id_const)).to.be.revertedWith("Group doesn't exist")
               })
               //check if members are full
               it("should revert if group is full", async () => {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   for (let i = 1; i < 4; i++) {
                       lum.connect(accounts[i]).joinGroup(id_const)
                   }
@@ -74,13 +75,13 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   )
               })
               it("should join a group", async () => {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   const address2 = accounts[1]
                   await lum.connect(address2).joinGroup(id_const)
                   expect((await lum.NumberOfGroupMembers(id_const)).toNumber()).to.equal(2)
               })
               it("should emit a group joined event", async () => {
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
                   await expect(lum.joinGroup(id_const)).to.emit(lum, "GroupJoined")
               })
           })
@@ -88,7 +89,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               beforeEach(async () => {
                   accounts = await ethers.getSigners()
 
-                  await lum.createGroup("raiyan")
+                  await lum.createGroup("raiyan", sendValue)
               })
               it("should revert if caller isn't a member", async function () {
                   await expect(
@@ -157,6 +158,47 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
           })
 
+          describe("withdraw", function () {
+              beforeEach(async function () {
+                  await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
+                  await network.provider.send("evm_mine", [])
+              })
+              it.only("should mit a funds Withdrawn event", async function () {
+                  await lum.createGroup("raiyan", sendValue)
+                  await lum.depositFunds(id_const, { value: sendValue })
+                  await lum.startLum(id_const)
+                  accounts = await ethers.getSigners()
+                  const lummers = 4
+
+                  for (let i = 1; i < lummers; i++) {
+                      await lum.connect(accounts[i]).joinGroup(id_const)
+                      await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
+                  }
+
+                  //listener for events
+                  await new Promise(async (resolve, reject) => {
+                      lum.once("lummerAddressPicked", async () => {
+                          try {
+                              await expect(lum.connect(accounts[1]).withdraw(id_const)).to.emit(
+                                  lum,
+                                  "FundsWithdrawn"
+                              )
+                          } catch (e) {
+                              reject(e)
+                          }
+                          resolve()
+                      })
+
+                      const tx = await lum.performUpkeep([])
+                      const txReceipts = await tx.wait(1)
+                      await vrfCoordinatorMock.fulfillRandomWords(
+                          txReceipts.events[1].args.requestId,
+                          lum.address
+                      )
+                  })
+              })
+          })
+
           describe("fulfillRandomWords", function () {
               beforeEach(async function () {
                   await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
@@ -167,8 +209,8 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                       vrfCoordinatorMock.fulfillRandomWords(0, lum.address)
                   ).to.be.revertedWith("nonexistent request")
               })
-              it.only("picks a user address at random from a group", async () => {
-                  await lum.createGroup("raiyan")
+              it("picks a user address at random from a group", async () => {
+                  await lum.createGroup("raiyan", sendValue)
                   await lum.depositFunds(id_const, { value: sendValue })
                   await lum.startLum(id_const)
                   accounts = await ethers.getSigners()
@@ -177,8 +219,9 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   for (let i = 1; i < lummers; i++) {
                       await lum.connect(accounts[i]).joinGroup(id_const)
                       await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
-                      console.log(`Lummer Address ${i} : ${accounts[i].address}`)
                   }
+
+                  console.log("Balance of Group:", (await lum.balanceOf(id_const)).toString())
 
                   const startingTimeStamp = await lum.get_TimeStamp()
                   let endingTime
@@ -190,12 +233,20 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                           try {
                               const lumAddress = await lum.getLummAddress()
                               console.log("Random Lummer Address:", lumAddress)
+
+                              console.log("Withdrawing Eth.......")
+                              await lum.connect(accounts[1]).withdraw(id_const)
+
                               endingTime = await lum.get_TimeStamp()
                               assert(endingTime > startingTimeStamp)
                           } catch (e) {
                               reject(e)
                           }
                           resolve()
+                          console.log(
+                              "Balance of Group:",
+                              (await lum.balanceOf(id_const)).toString()
+                          )
                       })
 
                       const tx = await lum.performUpkeep([])

@@ -31,6 +31,11 @@ interface ILum {
     event LummerReceiver(address indexed lummerAddress);
 
     /**
+     * @dev Emitted when a caller withdraws funds
+     */
+    event FundsWithdrawn(address indexed lummer, uint256 indexed amount, bytes32 gtoupId);
+
+    /**
      * @notice creates a group.
      *
      * @dev use a keccak256 to hash the name,the caller and number of
@@ -38,7 +43,7 @@ interface ILum {
      *
      * Emits a {GroupCreated} event.
      */
-    function createGroup(string memory name) external;
+    function createGroup(string memory _name, uint256 _amount) external;
 
     /**
      *@dev deposit funds to Lum contract
@@ -80,4 +85,9 @@ interface ILum {
      * @param groupId -> an id of a group
      */
     function balanceOf(bytes32 groupId) external view returns (uint256);
+
+    /**
+     * @dev caller with draws funds from group balance
+     */
+    function withdraw(bytes32 groupId) external;
 }
