@@ -8,7 +8,6 @@ import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "hardhat/console.sol";
-import "./MultiSig.sol";
 
 /***************ERRORS****************/
 error Lum__CallerNonExistent();
@@ -17,6 +16,8 @@ error Lum__NotEnoughEth();
 error Lum__UpkeepNotNeeded();
 error Lum_NotAllMembersPaid();
 error Lum__NotAuthorized();
+error Lum__CallerAlreadyWithdrew();
+error Lum__TransferFailed();
 
 /**
  * @title Lum
@@ -38,11 +39,13 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         bytes32 id;
         string name;
         uint8 number_of_members;
+        uint256 lum_amount;
     }
 
     struct Member {
         address mem_Address;
         STATUS paid_status;
+        bool withdrawn;
     }
 
     /********STATE VARIABLES***********/
@@ -66,9 +69,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
     uint32 private constant NUM_WORDS = 1;
     uint256 private s_requestId;
-
-    //string private immutable i_duration;
-    MultiSig multSig;
 
     /*********EVENTS**************/
     event IdRequested(uint256 indexed requestId);
@@ -130,6 +130,21 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         _;
     }
 
+    modifier checkIfMemberAlreadyWithdrew(bytes32 groupId, address caller) {
+        Member[] memory members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
+        bool has_withdrew;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (members[i].mem_Address == caller && members[i].withdrawn) {
+                has_withdrew = true;
+            }
+        }
+        if (has_withdrew) {
+            revert Lum__CallerAlreadyWithdrew();
+        }
+        _;
+    }
+
     modifier onlyCreator() {
         if (_msgSender() != groupCreator) {
             revert Lum__NotAuthorized();
@@ -164,11 +179,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      */
     function startLum(bytes32 groupId) external override onlyCreator {
         s_groupId = groupId;
-        //get owners
-    }
-
-    function setMultiSig(address _multiSig) external {
-        multSig = MultiSig(_multiSig);
     }
 
     function allMembersPaymentStatus(bytes32 groupId) internal view returns (bool) {
@@ -235,7 +245,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     function fulfillRandomWords(
         uint256, /* requestId */
         uint256[] memory randomWords
-    ) internal override nonReentrant {
+    ) internal override {
         uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
         s_lastTimeStamp = block.timestamp;
         lummerAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
@@ -248,13 +258,13 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      * @dev see {ILum.sol-createGroup}.
      *
      */
-    function createGroup(string memory _name) external override {
+    function createGroup(string memory _name, uint256 _amount) external override {
         groupCreator = _msgSender();
         bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
         //check if it calls saves gas
         s_group.push(id);
-        s_groupById[id] = Group(id, _name, NUM_MEMBERS);
-        s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID));
+        s_groupById[id] = Group(id, _name, NUM_MEMBERS, _amount);
+        s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID, false));
         emit GroupCreated(id);
     }
 
@@ -268,7 +278,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         checkGroupExist(groupId)
         checkMembersFull(groupId)
     {
-        s_group_mems[groupId].push(Member(_msgSender(), STATUS.NOT_PAID));
+        s_group_mems[groupId].push(Member(_msgSender(), STATUS.NOT_PAID, false));
         emit GroupJoined(groupId, _msgSender());
     }
 
@@ -280,7 +290,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         checkIfMemberExist(groupId, msg.sender)
         checkIfMemberAlreadyPaid(groupId, msg.sender)
     {
-        if (msg.value == 0) {
+        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        if (msg.value != lumAmount) {
             revert Lum__NotEnoughEth();
         }
 
@@ -289,6 +300,28 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         UpdatePaymentStatus(groupId, msg.sender);
 
         emit GroupFunded(msg.sender, groupId, msg.value);
+    }
+
+    function withdraw(bytes32 groupId)
+        external
+        override
+        checkGroupExist(groupId)
+        checkIfMemberExist(groupId, _msgSender())
+        checkIfMemberAlreadyWithdrew(groupId, _msgSender())
+    {
+        require(_msgSender() == lummerAddress);
+
+        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        //Effects
+        s_group_balances[groupId] -= lumAmount;
+        UpdateWithdrawStatus(groupId, _msgSender());
+        //interaction
+        (bool sent, ) = lummerAddress.call{value: lumAmount}("");
+
+        if (!sent) {
+            revert Lum__TransferFailed();
+        }
+        emit FundsWithdrawn(lummerAddress, lumAmount, groupId);
     }
 
     function getMemberPaymentStatus(address member_Address, bytes32 groupId)
@@ -317,6 +350,17 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         }
     }
 
+    function UpdateWithdrawStatus(bytes32 groupId, address memberAddress) private {
+        Member[] storage members = s_group_mems[groupId];
+
+        uint256 mem_length = members.length;
+        for (uint256 i = 0; i < mem_length; ++i) {
+            if (members[i].mem_Address == memberAddress) {
+                members[i].withdrawn = true;
+            }
+        }
+    }
+
     function getGroupId(uint256 num) external view override returns (bytes32) {
         return s_group[num];
     }
@@ -334,16 +378,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
 
     function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
         return s_group_mems[groupId].length;
-    }
-
-    function getMembersAddress(bytes32 groupId) public view returns (address[] memory) {
-        address[] memory ownersAddress = new address[](4);
-        uint256 length = s_group_mems[groupId].length;
-        Member[] memory members = s_group_mems[groupId];
-        for (uint256 i = 0; i < length; i++) {
-            ownersAddress[i] = members[i].mem_Address;
-        }
-        return ownersAddress;
     }
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
