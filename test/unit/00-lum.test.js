@@ -41,12 +41,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   expect(await lum.numberOfGroups()).to.equal(1)
               })
           })
-          describe("getGroupId()", () => {
-              it("should return a group id", async function () {
-                  await lum.createGroup("raiyan", sendValue)
-                  expect(await lum.getGroupId(0)).to.equal(id_const)
-              })
-          })
+
           describe("getNum_Members()", () => {
               it("should return a group id", async function () {
                   await lum.createGroup("raiyan", sendValue)
@@ -71,7 +66,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   }
                   const address5 = accounts[4]
                   await expect(lum.connect(address5).joinGroup(id_const)).to.be.revertedWith(
-                      "Group is full"
+                      "Group full"
                   )
               })
               it("should join a group", async () => {
@@ -91,11 +86,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
                   await lum.createGroup("raiyan", sendValue)
               })
-              it("should revert if caller isn't a member", async function () {
-                  await expect(
-                      lum.connect(accounts[1]).depositFunds(id_const)
-                  ).to.be.revertedWithCustomError(lum, "Lum__CallerNonExistent")
-              })
+
               it("should revert if ether not enough", async () => {
                   await expect(lum.depositFunds(id_const)).to.be.revertedWithCustomError(
                       lum,

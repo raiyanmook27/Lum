@@ -26,7 +26,7 @@ interface ILum {
     event LumStarted(bytes32 indexed groupId);
 
     /**
-     * @dev
+     * @dev emits the random address picked.
      */
     event LummerReceiver(address indexed lummerAddress);
 
@@ -70,12 +70,9 @@ interface ILum {
      */
     function startLum(bytes32 groupId) external;
 
-    // /**
-    //  * @dev Returns the number of members in a group based on 'groupId'.
-    //  */
-    // function numberOfMembers(bytes32 groupId) external view returns (uint256);
-    function getGroupId(uint256 num) external returns (bytes32);
-
+    /**
+     * @dev returns the number of members in a group
+     */
     function getNum_Members() external returns (uint256);
 
     function NumberOfGroupMembers(bytes32 groupId) external view returns (uint256);
@@ -90,4 +87,9 @@ interface ILum {
      * @dev caller with draws funds from group balance
      */
     function withdraw(bytes32 groupId) external;
+
+    /**
+     * @dev returns all groups in the contract
+     */
+    function getAllGroups() external view returns (bytes32[] memory);
 }
