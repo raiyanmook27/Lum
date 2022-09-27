@@ -12,7 +12,7 @@
 - [X] A member should be able to pay into a groups account.
 - [X] picks a user at random using Chainlinks VRF.
 - [X] use Chainlinks Keepers to send ether to the random user.
-- [ ] Update mappings to Open Zeppelins EnumerableMap.
+- [X] Update mappings to Open Zeppelins EnumerableMap.
 - [ ] Make Gas Optimizations
 
 
