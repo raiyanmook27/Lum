@@ -163,7 +163,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
                   await network.provider.send("evm_mine", [])
               })
-              it.only("should mit a funds Withdrawn event", async function () {
+              it("should emit a funds Withdrawn event", async function () {
                   await lum.createGroup("raiyan", sendValue)
                   await lum.depositFunds(id_const, { value: sendValue })
                   await lum.startLum(id_const)

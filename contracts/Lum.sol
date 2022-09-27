@@ -8,6 +8,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 import "hardhat/console.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 
 /***************ERRORS****************/
 error Lum__CallerNonExistent();
@@ -28,6 +29,9 @@ error Lum__TransferFailed();
  *
  */
 contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
+    /****LIBRARIES*******/
+    using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
+
     /***********ENUMS**********************/
     enum STATUS {
         PAID,
@@ -54,6 +58,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     mapping(bytes32 => Group) private s_groupById;
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
+    EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
     uint8 private constant NUM_MEMBERS = 4;
     address private lummerAddress;
     uint256 private immutable i_interval;
@@ -265,6 +270,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         s_group.push(id);
         s_groupById[id] = Group(id, _name, NUM_MEMBERS, _amount);
         s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID, false));
+        s_group_balances_enum.set(id, 0);
         emit GroupCreated(id);
     }
 
@@ -295,7 +301,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
             revert Lum__NotEnoughEth();
         }
 
-        s_group_balances[groupId] += msg.value;
+        //s_group_balances[groupId] += msg.value;
+        s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
 
         UpdatePaymentStatus(groupId, msg.sender);
 
@@ -313,7 +320,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
 
         uint256 lumAmount = s_groupById[groupId].lum_amount;
         //Effects
-        s_group_balances[groupId] -= lumAmount;
+        // s_group_balances[groupId] -= lumAmount;
+        s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) - lumAmount);
         UpdateWithdrawStatus(groupId, _msgSender());
         //interaction
         (bool sent, ) = lummerAddress.call{value: lumAmount}("");
@@ -381,7 +389,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     }
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
-        return s_group_balances[groupId];
+        //return s_group_balances[groupId];
+        return s_group_balances_enum.get(groupId);
     }
 
     function getLummAddress() external view returns (address) {
