@@ -91,5 +91,5 @@ interface ILum {
     /**
      * @dev returns all groups in the contract
      */
-    function getAllGroups() external view returns (bytes32[] memory);
+    //function getAllGroups() external view returns (bytes32[] memory);
 }
