@@ -60,8 +60,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
     EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
+    mapping(bytes32 => address) private s_group_randomAddress;
     uint8 private constant NUM_MEMBERS = 4;
-    address private lummerAddress;
     uint256 private immutable i_interval;
     uint256 private s_lastTimeStamp;
     bytes32 private s_groupId;
@@ -179,7 +179,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         s_groupId = groupId;
     }
 
-    function allMembersPaymentStatus(bytes32 groupId) internal view returns (bool) {
+    function allMembersPaymentStatus(bytes32 groupId) public view returns (bool) {
         Member[] memory members = s_group_mems[groupId];
         uint256 mem_length = members.length;
         uint256 mem_count;
@@ -246,9 +246,9 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     ) internal override {
         uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
         s_lastTimeStamp = block.timestamp;
-        lummerAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
-
-        emit lummerAddressPicked(lummerAddress);
+        address randomAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
+        s_group_randomAddress[s_groupId] = randomAddress;
+        emit lummerAddressPicked(randomAddress);
     }
 
     /**
@@ -306,7 +306,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         //s_group_balances[groupId] += msg.value;
         s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
 
-        UpdatePaymentStatus(groupId, msg.sender);
+        UpdatePaymentStatus(groupId, _msgSender());
 
         emit GroupFunded(msg.sender, groupId, msg.value);
     }
@@ -320,21 +320,22 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         checkGroupExist(groupId)
         checkIfMemberAlreadyWithdrew(groupId, _msgSender())
     {
-        require(_msgSender() == lummerAddress);
+        address randomAddress = s_group_randomAddress[groupId];
+        require(_msgSender() == randomAddress, "Not Authorized");
 
         uint256 lumAmount = s_groupById[groupId].lum_amount;
         //Effects
-        // s_group_balances[groupId] -= lumAmount;
         uint256 prevVal = s_group_balances_enum.get(groupId);
         s_group_balances_enum.set(groupId, prevVal - lumAmount);
         UpdateWithdrawStatus(groupId, _msgSender());
+        s_group_randomAddress[groupId] = address(0);
         //interaction
-        (bool sent, ) = lummerAddress.call{value: lumAmount}("");
+        (bool sent, ) = randomAddress.call{value: lumAmount}("");
 
         if (!sent) {
             revert Lum__TransferFailed();
         }
-        emit FundsWithdrawn(lummerAddress, lumAmount, groupId);
+        emit FundsWithdrawn(randomAddress, lumAmount, groupId);
     }
 
     function getMemberPaymentStatus(address member_Address, bytes32 groupId)
@@ -388,9 +389,9 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     // function getGroupId(uint256 num) external view override returns (bytes32) {
     //     return s_group[num];
     // }
-    function getAllGroups() external view override returns (bytes32[] memory) {
-        return s_group_enum.values();
-    }
+    // function getAllGroups() external view override returns (bytes32[] memory) {
+    //     return s_group_enum.values();
+    // }
 
     function getNum_Members() external pure override returns (uint256) {
         return NUM_MEMBERS;
@@ -412,8 +413,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         return s_group_balances_enum.get(groupId);
     }
 
-    function getLummAddress() external view returns (address) {
-        return lummerAddress;
+    function getLummAddress(bytes32 groupId) external view returns (address) {
+        return s_group_randomAddress[groupId];
     }
 
     function getInterval() external view returns (uint256) {

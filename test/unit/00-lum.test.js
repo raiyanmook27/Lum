@@ -118,6 +118,21 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
           })
 
+          describe("allMembersPaid", function () {
+              it("should return true if all members in a group have paid", async () => {
+                  await lum.createGroup("raiyan", sendValue)
+                  await lum.depositFunds(id_const, { value: sendValue })
+                  accounts = await ethers.getSigners()
+                  const lummers = 4
+
+                  for (let i = 1; i < lummers; i++) {
+                      await lum.connect(accounts[i]).joinGroup(id_const)
+                      await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
+                  }
+                  expect(await lum.allMembersPaymentStatus(id_const)).to.equal(true)
+              })
+          })
+
           describe("checkUpkeep", function () {
               it("should return false if time has passed", async function () {
                   await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
@@ -149,23 +164,36 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
           })
 
+          describe("all groups", function () {
+              it("should return the number of groups", async () => {
+                  accounts = await ethers.getSigners()
+                  await lum.createGroup("raiyan", sendValue)
+                  await lum.connect(accounts[2]).createGroup("john", sendValue)
+                  expect(await lum.numberOfGroups()).to.equal(2)
+              })
+          })
+
           describe("withdraw", function () {
               beforeEach(async function () {
                   await network.provider.send("evm_increaseTime", [interval.toNumber() + 1])
                   await network.provider.send("evm_mine", [])
-              })
-              it("should emit a funds Withdrawn event", async function () {
+                  accounts = await ethers.getSigners()
+                  const lummers = 4
                   await lum.createGroup("raiyan", sendValue)
                   await lum.depositFunds(id_const, { value: sendValue })
                   await lum.startLum(id_const)
-                  accounts = await ethers.getSigners()
-                  const lummers = 4
-
                   for (let i = 1; i < lummers; i++) {
                       await lum.connect(accounts[i]).joinGroup(id_const)
                       await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
                   }
-
+              })
+              //   it.only("should revert if transaction fails", async function () {
+              //       await expect(lum.withdraw(id_const)).to.revertedWithCustomError(
+              //           lum,
+              //           "Lum__TransferFailed"
+              //       )
+              //   })
+              it("should emit a funds Withdrawn event", async function () {
                   //listener for events
                   await new Promise(async (resolve, reject) => {
                       lum.once("lummerAddressPicked", async () => {
@@ -222,7 +250,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                           console.log("found Event")
 
                           try {
-                              const lumAddress = await lum.getLummAddress()
+                              const lumAddress = await lum.getLummAddress(id_const)
                               console.log("Random Lummer Address:", lumAddress)
 
                               console.log("Withdrawing Eth.......")
