@@ -60,8 +60,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
     EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
+    mapping(bytes32 => address) private s_group_randomAddress;
     uint8 private constant NUM_MEMBERS = 4;
-    address private lummerAddress;
     uint256 private immutable i_interval;
     uint256 private s_lastTimeStamp;
     bytes32 private s_groupId;
@@ -184,40 +184,15 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         emit IdRequested(s_requestId);
     }
 
-    /**
-     * @dev see {ILum.sol-jdepositFunds}.
-     */
-    function depositFunds(bytes32 groupId)
-        external
-        payable
-        override
-        checkGroupExist(groupId)
-        checkIfMemberAlreadyPaid(groupId, _msgSender())
-    {
-        uint256 lumAmount = s_groupById[groupId].lum_amount;
-        if (msg.value != lumAmount) {
-            revert Lum__NotEnoughEth();
-        }
-
-        //s_group_balances[groupId] += msg.value;
-        s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
-
-        UpdatePaymentStatus(groupId, msg.sender);
-
-        emit GroupFunded(msg.sender, groupId, msg.value);
-    }
-
-    /**
-     *
-     * @dev see {ILum.sol-startLum}.
-     */
-    function startLum(bytes32 groupId)
-        external
-        override
-        checkGroupExist(groupId)
-        checkIfMemberExist(groupId, _msgSender())
-    {
-        s_groupId = groupId;
+    function fulfillRandomWords(
+        uint256, /* requestId */
+        uint256[] memory randomWords
+    ) internal override {
+        uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
+        s_lastTimeStamp = block.timestamp;
+        address randomAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
+        s_group_randomAddress[s_groupId] = randomAddress;
+        emit lummerAddressPicked(randomAddress);
     }
 
     /**
@@ -250,16 +225,18 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     }
 
     /**
-     * @dev see {ILum.sol-Withdraw}.
+     *
+     * @dev see {ILum.sol-startLum}.
      */
-    function withdraw(bytes32 groupId)
+    function startLum(bytes32 groupId)
         external
         override
         checkGroupExist(groupId)
         checkIfMemberAlreadyWithdrew(groupId, _msgSender())
         nonReentrant
     {
-        require(_msgSender() == lummerAddress);
+        address randomAddress = s_group_randomAddress[groupId];
+        require(_msgSender() == randomAddress, "Not Authorized");
 
         uint256 lumAmount = s_groupById[groupId].lum_amount;
         //Effects
@@ -267,87 +244,18 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         uint256 prevVal = s_group_balances_enum.get(groupId);
         s_group_balances_enum.set(groupId, prevVal - lumAmount);
         UpdateWithdrawStatus(groupId, _msgSender());
+        s_group_randomAddress[groupId] = address(0);
         //interaction
-        (bool sent, ) = lummerAddress.call{value: lumAmount}("");
-
-        if (!sent) {
-            revert Lum__TransferFailed();
-        }
-        emit FundsWithdrawn(lummerAddress, lumAmount, groupId);
+        (bool sent, ) = randomAddress.call{value: lumAmount}("");
     }
-
-    /**
-     * @dev see {ILum.sol-numberOfGroups}.
-     */
-    function numberOfGroups() external view override returns (uint256) {
-        //return s_group.length;
-        return s_group_enum.length();
-    }
-
-    // function getGroupId(uint256 num) external view override returns (bytes32) {
-    //     return s_group[num];
-    // }
-    function getAllGroups() external view override returns (bytes32[] memory) {
-        return s_group_enum.values();
-    }
-
-    /**
-     * @dev Returns the details of a group based on 'groupId'.
-     */
-    function groupDetails(bytes32 groupId) external view returns (Group memory) {
-        return s_groupById[groupId];
-    }
-
-    function numberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
-        return s_group_mems[groupId].length;
-    }
-
-    function balanceOf(bytes32 groupId) external view override returns (uint256) {
-        //return s_group_balances[groupId];
-        return s_group_balances_enum.get(groupId);
-    }
-
-    function getLummAddress() external view returns (address) {
-        return lummerAddress;
-    }
-
-    function getInterval() external view returns (uint256) {
-        return i_interval;
-    }
-
-    function getTimeStamp() external view returns (uint256) {
-        return s_lastTimeStamp;
-    }
-
     function getNumMembers() external pure override returns (uint256) {
         return NUM_MEMBERS;
     }
 
-    /***
-     * @dev This is the function the chainlink Keeper nodes call
-     * they check for if 'UpKeep' returns true.
-     * The follwing should be true inorder to return true.
-     * 1. The time interval should have passed.
-     * 2. subscription is funded.
-     * 3. group exist
-     * 4. all members have paid
-     */
-    function checkUpkeep(
-        //calldata doesnt work with bytes
-        bytes memory /*checkData*/
-    )
-        public
-        override
-        returns (
-            bool upkeepNeeded,
-            bytes memory /*performData*/
-        )
-    {
-        //check time elapsed
-        bool groupExists = s_groupById[s_groupId].id == s_groupId;
-        bool hasMembersPaid = allMembersPaymentStatus(s_groupId);
-        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
-        upkeepNeeded = (groupExists && hasMembersPaid && timePassed);
+        if (!sent) {
+            revert Lum__TransferFailed();
+        }
+        emit FundsWithdrawn(randomAddress, lumAmount, groupId);
     }
 
     function getMemberPaymentStatus(address memberAddress, bytes32 groupId)
