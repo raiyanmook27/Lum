@@ -73,7 +73,7 @@ interface ILum {
     /**
      * @dev returns the number of members in a group
      */
-    function getNum_Members() external returns (uint256);
+    function getNumMembers() external returns (uint256);
 
     function numberOfGroupMembers(bytes32 groupId) external view returns (uint256);
 
@@ -92,4 +92,9 @@ interface ILum {
      * @dev returns all groups in the contract
      */
     //function getAllGroups() external view returns (bytes32[] memory);
+
+    /**
+     * @dev returns the current random address picked.
+     */
+    function getRandomAddress(bytes32 groupId) external view returns (address);
 }

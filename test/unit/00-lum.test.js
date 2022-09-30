@@ -42,13 +42,6 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
           })
 
-          describe("getNum_Members()", () => {
-              it("should return a group id", async function () {
-                  await lum.createGroup("raiyan", sendValue)
-                  expect(await lum.getNum_Members()).to.equal(4)
-              })
-          })
-
           describe("joinGroup()", () => {
               beforeEach(async function () {
                   accounts = await ethers.getSigners()
@@ -73,7 +66,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                   await lum.createGroup("raiyan", sendValue)
                   const address2 = accounts[1]
                   await lum.connect(address2).joinGroup(id_const)
-                  expect((await lum.NumberOfGroupMembers(id_const)).toNumber()).to.equal(2)
+                  expect((await lum.numberOfGroupMembers(id_const)).toNumber()).to.equal(2)
               })
               it("should emit a group joined event", async () => {
                   await lum.createGroup("raiyan", sendValue)
@@ -250,7 +243,7 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
                           console.log("found Event")
 
                           try {
-                              const lumAddress = await lum.getLummAddress(id_const)
+                              const lumAddress = await lum.getRandomAddress(id_const)
                               console.log("Random Lummer Address:", lumAddress)
 
                               console.log("Withdrawing Eth.......")
@@ -258,14 +251,14 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
                               endingTime = await lum.get_TimeStamp()
                               assert(endingTime > startingTimeStamp)
+                              console.log(
+                                  "Balance of Group:",
+                                  (await lum.balanceOf(id_const)).toString()
+                              )
                           } catch (e) {
                               reject(e)
                           }
                           resolve()
-                          console.log(
-                              "Balance of Group:",
-                              (await lum.balanceOf(id_const)).toString()
-                          )
                       })
 
                       const tx = await lum.performUpkeep([])
