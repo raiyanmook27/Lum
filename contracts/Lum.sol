@@ -2,7 +2,6 @@
 pragma solidity ^0.8.9;
 
 import "./ILum.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
@@ -21,13 +20,13 @@ error Lum__TransferFailed();
 
 /**
  * @title Lum
- * @dev * A contract that creates a group of users who can deposit funds into contract
- * daily and every week a member of the group is sent all the funds, the process starts again.
- * till every member of the group gets paid.
+ * @dev * A contract that creates a group of users who can deposit funds into the contract
+ * daily and every week a member of the group selected at random and sent all the ether,the process starts again.
+ * till every member in the group gets paid.
  * @author Raiyan Mukhtar
  *
  */
-contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
+contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
     /****LIBRARIES*******/
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -41,9 +40,9 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     /**************STRUCTS****************/
     struct Group {
         bytes32 id;
-        string name;
-        uint8 number_of_members;
         uint256 lum_amount;
+        uint8 number_of_members;
+        string name;
     }
 
     struct Member {
@@ -56,24 +55,25 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     //change mappings to open Zepellins EnumerableMap
     bytes32[] private s_group;
     EnumerableSet.Bytes32Set private s_group_enum;
+    EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
     mapping(bytes32 => Group) private s_groupById;
     mapping(bytes32 => Member[]) private s_group_mems;
     mapping(bytes32 => uint256) private s_group_balances;
-    EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
     mapping(bytes32 => address) private s_group_randomAddress;
-    uint8 private constant NUM_MEMBERS = 4;
+
+    bytes32 private immutable i_gasLane;
+    bytes32 private s_groupId;
     uint256 private immutable i_interval;
     uint256 private s_lastTimeStamp;
-    bytes32 private s_groupId;
+    uint256 private s_requestId;
+    uint64 private immutable i_subscriptionId;
+    uint32 private constant NUM_WORDS = 1;
+    uint32 private immutable i_callbackGasLimit;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint8 private constant NUM_MEMBERS = 4;
 
     // Chainlink VRF Variables
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
-    uint64 private immutable i_subscriptionId;
-    bytes32 private immutable i_gasLane;
-    uint32 private immutable i_callbackGasLimit;
-    uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant NUM_WORDS = 1;
-    uint256 private s_requestId;
 
     /*********EVENTS**************/
     event IdRequested(uint256 indexed requestId);
@@ -107,7 +107,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         Member[] memory members = s_group_mems[groupId];
         uint256 mem_length = members.length;
         bool is_exist;
-        for (uint256 i = 0; i < mem_length; ++i) {
+        for (uint256 i = 0; i < mem_length; ) {
             if (members[i].mem_Address == caller) {
                 is_exist = true;
             }
@@ -125,9 +125,12 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         Member[] memory members = s_group_mems[groupId];
         uint256 mem_length = members.length;
         bool has_paid;
-        for (uint256 i = 0; i < mem_length; ++i) {
-            if (members[i].mem_Address == caller && members[i].paid_status == Status.PAID) {
+        for (uint256 i = 0; i < mem_length; ) {
+            if (members[i].paid_status == Status.PAID && members[i].mem_Address == caller) {
                 has_paid = true;
+            }
+            unchecked {
+                ++i;
             }
         }
         if (has_paid) {
@@ -140,9 +143,12 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         Member[] memory members = s_group_mems[groupId];
         uint256 mem_length = members.length;
         bool has_withdrew;
-        for (uint256 i = 0; i < mem_length; ++i) {
+        for (uint256 i = 0; i < mem_length; ) {
             if (members[i].mem_Address == caller && members[i].withdrawn) {
                 has_withdrew = true;
+            }
+            unchecked {
+                ++i;
             }
         }
         if (has_withdrew) {
@@ -167,7 +173,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     }
 
     /**
-     * @dev see {ILum.sol-jdepositFunds}.
+     * @dev see {ILum.sol-depositFunds}.
      */
     function depositFunds(bytes32 groupId)
         public
@@ -181,7 +187,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
             revert Lum__NotEnoughEth();
         }
 
-        //s_group_balances[groupId] += msg.value;
         s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
 
         UpdatePaymentStatus(groupId, _msgSender());
@@ -189,6 +194,10 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         emit GroupFunded(msg.sender, groupId, msg.value);
     }
 
+    /**
+     * @dev executes when checkUpKeep is true.
+     * and requests the random number
+     */
     function performUpkeep(
         bytes calldata /*performData*/
     ) external override {
@@ -217,7 +226,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         //check if it calls saves gas
         //s_group.push(id);
         s_group_enum.add(id);
-        s_groupById[id] = Group(id, _name, NUM_MEMBERS, _amount);
+        s_groupById[id] = Group(id, _amount, NUM_MEMBERS, _name);
         s_group_mems[id].push(Member(_msgSender(), Status.NOT_PAID, false));
         s_group_balances_enum.set(id, 0);
         emit GroupCreated(id);
@@ -276,10 +285,6 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         s_groupId = groupId;
     }
 
-    function getNumMembers() external override returns (uint256) {
-        return NUM_MEMBERS;
-    }
-
     // /**
     //  * @dev Returns the details of a group based on 'groupId'.
     //  */
@@ -316,6 +321,16 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         return s_lastTimeStamp;
     }
 
+    function getNumMembers() external pure override returns (uint256) {
+        return NUM_MEMBERS;
+    }
+
+    /**
+     * @dev for checkUp to return true the following has to be met
+     * 1. the groupId exist
+     * 2. All members in the specific group have made thier payment.
+     * 3. The time allocated is elapsed.
+     */
     function checkUpkeep(
         //calldata doesnt work with bytes
         bytes memory /*checkData*/
@@ -369,6 +384,11 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         }
     }
 
+    /**
+     * @dev fulfills the random number request.
+     *
+     * @param randomWords -> "the random number provided by chainlink"
+     */
     function fulfillRandomWords(
         uint256, /* requestId */
         uint256[] memory randomWords

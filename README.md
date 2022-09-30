@@ -14,7 +14,7 @@
 - [X] use Chainlinks Keepers to send ether to the random user.
 - [X] Update mappings to Open Zeppelins EnumerableMap.
 - [X] store and reset random addresses for various groups
-- [ ] Make Gas Optimizations
+- [X] Make Gas Optimizations
 
 
 # Usage 
