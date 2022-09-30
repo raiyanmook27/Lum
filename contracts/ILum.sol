@@ -75,7 +75,7 @@ interface ILum {
      */
     function getNum_Members() external returns (uint256);
 
-    function NumberOfGroupMembers(bytes32 groupId) external view returns (uint256);
+    function numberOfGroupMembers(bytes32 groupId) external view returns (uint256);
 
     /**
      * @dev return the balance of a group with id

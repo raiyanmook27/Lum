@@ -33,7 +33,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     /***********ENUMS**********************/
-    enum STATUS {
+    enum Status {
         PAID,
         NOT_PAID
     }
@@ -48,7 +48,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
 
     struct Member {
         address mem_Address;
-        STATUS paid_status;
+        Status paid_status;
         bool withdrawn;
     }
 
@@ -126,7 +126,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         uint256 mem_length = members.length;
         bool has_paid;
         for (uint256 i = 0; i < mem_length; ++i) {
-            if (members[i].mem_Address == caller && members[i].paid_status == STATUS.PAID) {
+            if (members[i].mem_Address == caller && members[i].paid_status == Status.PAID) {
                 has_paid = true;
             }
         }
@@ -166,6 +166,47 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         i_callbackGasLimit = callbackGasLimit;
     }
 
+    function performUpkeep(
+        bytes calldata /*performData*/
+    ) external override {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+
+        if (!upkeepNeeded) {
+            revert Lum__UpkeepNotNeeded();
+        }
+        s_requestId = i_vrfCoordinator.requestRandomWords(
+            i_gasLane,
+            i_subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            i_callbackGasLimit,
+            NUM_WORDS
+        );
+        emit IdRequested(s_requestId);
+    }
+
+    /**
+     * @dev see {ILum.sol-jdepositFunds}.
+     */
+    function depositFunds(bytes32 groupId)
+        external
+        payable
+        override
+        checkGroupExist(groupId)
+        checkIfMemberAlreadyPaid(groupId, _msgSender())
+    {
+        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        if (msg.value != lumAmount) {
+            revert Lum__NotEnoughEth();
+        }
+
+        //s_group_balances[groupId] += msg.value;
+        s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
+
+        UpdatePaymentStatus(groupId, msg.sender);
+
+        emit GroupFunded(msg.sender, groupId, msg.value);
+    }
+
     /**
      *
      * @dev see {ILum.sol-startLum}.
@@ -179,20 +220,107 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         s_groupId = groupId;
     }
 
-    function allMembersPaymentStatus(bytes32 groupId) internal view returns (bool) {
-        Member[] memory members = s_group_mems[groupId];
-        uint256 mem_length = members.length;
-        uint256 mem_count;
-        for (uint256 i = 0; i < mem_length; i++) {
-            if (members[i].paid_status == STATUS.PAID) {
-                mem_count++;
-            }
+    /**
+     *
+     * @dev see {ILum.sol-createGroup}.
+     *
+     */
+    function createGroup(string memory _name, uint256 _amount) external override {
+        bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
+        //check if it calls saves gas
+        //s_group.push(id);
+        s_group_enum.add(id);
+        s_groupById[id] = Group(id, _name, NUM_MEMBERS, _amount);
+        s_group_mems[id].push(Member(_msgSender(), Status.NOT_PAID, false));
+        s_group_balances_enum.set(id, 0);
+        emit GroupCreated(id);
+    }
+
+    /**
+     * @dev see {ILum.sol-joinGroup}.
+     */
+    function joinGroup(bytes32 groupId)
+        external
+        override
+        checkGroupExist(groupId)
+        checkMembersFull(groupId)
+    {
+        s_group_mems[groupId].push(Member(_msgSender(), Status.NOT_PAID, false));
+        emit GroupJoined(groupId, _msgSender());
+    }
+
+    /**
+     * @dev see {ILum.sol-Withdraw}.
+     */
+    function withdraw(bytes32 groupId)
+        external
+        override
+        checkGroupExist(groupId)
+        checkIfMemberAlreadyWithdrew(groupId, _msgSender())
+        nonReentrant
+    {
+        require(_msgSender() == lummerAddress);
+
+        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        //Effects
+        // s_group_balances[groupId] -= lumAmount;
+        uint256 prevVal = s_group_balances_enum.get(groupId);
+        s_group_balances_enum.set(groupId, prevVal - lumAmount);
+        UpdateWithdrawStatus(groupId, _msgSender());
+        //interaction
+        (bool sent, ) = lummerAddress.call{value: lumAmount}("");
+
+        if (!sent) {
+            revert Lum__TransferFailed();
         }
-        if (mem_count == mem_length) {
-            return true;
-        } else {
-            return false;
-        }
+        emit FundsWithdrawn(lummerAddress, lumAmount, groupId);
+    }
+
+    /**
+     * @dev see {ILum.sol-numberOfGroups}.
+     */
+    function numberOfGroups() external view override returns (uint256) {
+        //return s_group.length;
+        return s_group_enum.length();
+    }
+
+    // function getGroupId(uint256 num) external view override returns (bytes32) {
+    //     return s_group[num];
+    // }
+    function getAllGroups() external view override returns (bytes32[] memory) {
+        return s_group_enum.values();
+    }
+
+    /**
+     * @dev Returns the details of a group based on 'groupId'.
+     */
+    function groupDetails(bytes32 groupId) external view returns (Group memory) {
+        return s_groupById[groupId];
+    }
+
+    function numberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
+        return s_group_mems[groupId].length;
+    }
+
+    function balanceOf(bytes32 groupId) external view override returns (uint256) {
+        //return s_group_balances[groupId];
+        return s_group_balances_enum.get(groupId);
+    }
+
+    function getLummAddress() external view returns (address) {
+        return lummerAddress;
+    }
+
+    function getInterval() external view returns (uint256) {
+        return i_interval;
+    }
+
+    function getTimeStamp() external view returns (uint256) {
+        return s_lastTimeStamp;
+    }
+
+    function getNumMembers() external pure override returns (uint256) {
+        return NUM_MEMBERS;
     }
 
     /***
@@ -222,22 +350,23 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         upkeepNeeded = (groupExists && hasMembersPaid && timePassed);
     }
 
-    function performUpkeep(
-        bytes calldata /*performData*/
-    ) external override {
-        (bool upkeepNeeded, ) = checkUpkeep("");
+    function getMemberPaymentStatus(address memberAddress, bytes32 groupId)
+        public
+        view
+        returns (Status paymentStat)
+    {
+        Member[] memory members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
 
-        if (!upkeepNeeded) {
-            revert Lum__UpkeepNotNeeded();
+        for (uint256 i = 0; i < mem_length; ) {
+            if (members[i].mem_Address == memberAddress) {
+                paymentStat = members[i].paid_status;
+            }
+
+            unchecked {
+                ++i;
+            }
         }
-        s_requestId = i_vrfCoordinator.requestRandomWords(
-            i_gasLane,
-            i_subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            i_callbackGasLimit,
-            NUM_WORDS
-        );
-        emit IdRequested(s_requestId);
     }
 
     function fulfillRandomWords(
@@ -251,118 +380,13 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         emit lummerAddressPicked(lummerAddress);
     }
 
-    /**
-     *
-     * @dev see {ILum.sol-createGroup}.
-     *
-     */
-    function createGroup(string memory _name, uint256 _amount) external override {
-        bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
-        //check if it calls saves gas
-        //s_group.push(id);
-        s_group_enum.add(id);
-        s_groupById[id] = Group(id, _name, NUM_MEMBERS, _amount);
-        s_group_mems[id].push(Member(_msgSender(), STATUS.NOT_PAID, false));
-        s_group_balances_enum.set(id, 0);
-        emit GroupCreated(id);
-    }
-
-    /**
-     * @dev see {ILum.sol-numberOfGroups}.
-     */
-    function numberOfGroups() external view override returns (uint256) {
-        //return s_group.length;
-        return s_group_enum.length();
-    }
-
-    /**
-     * @dev see {ILum.sol-joinGroup}.
-     */
-    function joinGroup(bytes32 groupId)
-        external
-        override
-        checkGroupExist(groupId)
-        checkMembersFull(groupId)
-    {
-        s_group_mems[groupId].push(Member(_msgSender(), STATUS.NOT_PAID, false));
-        emit GroupJoined(groupId, _msgSender());
-    }
-
-    /**
-     * @dev see {ILum.sol-jdepositFunds}.
-     */
-    function depositFunds(bytes32 groupId)
-        public
-        payable
-        override
-        checkGroupExist(groupId)
-        checkIfMemberAlreadyPaid(groupId, _msgSender())
-    {
-        uint256 lumAmount = s_groupById[groupId].lum_amount;
-        if (msg.value != lumAmount) {
-            revert Lum__NotEnoughEth();
-        }
-
-        //s_group_balances[groupId] += msg.value;
-        s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
-
-        UpdatePaymentStatus(groupId, msg.sender);
-
-        emit GroupFunded(msg.sender, groupId, msg.value);
-    }
-
-    /**
-     * @dev see {ILum.sol-Withdraw}.
-     */
-    function withdraw(bytes32 groupId)
-        external
-        override
-        checkGroupExist(groupId)
-        checkIfMemberAlreadyWithdrew(groupId, _msgSender())
-    {
-        require(_msgSender() == lummerAddress);
-
-        uint256 lumAmount = s_groupById[groupId].lum_amount;
-        //Effects
-        // s_group_balances[groupId] -= lumAmount;
-        uint256 prevVal = s_group_balances_enum.get(groupId);
-        s_group_balances_enum.set(groupId, prevVal - lumAmount);
-        UpdateWithdrawStatus(groupId, _msgSender());
-        //interaction
-        (bool sent, ) = lummerAddress.call{value: lumAmount}("");
-
-        if (!sent) {
-            revert Lum__TransferFailed();
-        }
-        emit FundsWithdrawn(lummerAddress, lumAmount, groupId);
-    }
-
-    function getMemberPaymentStatus(address member_Address, bytes32 groupId)
-        public
-        view
-        returns (STATUS paymentStat)
-    {
-        Member[] memory members = s_group_mems[groupId];
-        uint256 mem_length = members.length;
-
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == member_Address) {
-                paymentStat = members[i].paid_status;
-            }
-
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
     function UpdatePaymentStatus(bytes32 groupId, address memberAddress) private {
         Member[] storage members = s_group_mems[groupId];
 
         uint256 mem_length = members.length;
         for (uint256 i = 0; i < mem_length; ) {
             if (members[i].mem_Address == memberAddress) {
-                members[i].paid_status = STATUS.PAID;
+                members[i].paid_status = Status.PAID;
             }
             unchecked {
                 ++i;
@@ -385,42 +409,19 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         }
     }
 
-    // function getGroupId(uint256 num) external view override returns (bytes32) {
-    //     return s_group[num];
-    // }
-    function getAllGroups() external view override returns (bytes32[] memory) {
-        return s_group_enum.values();
-    }
-
-    function getNum_Members() external pure override returns (uint256) {
-        return NUM_MEMBERS;
-    }
-
-    // /**
-    //  * @dev Returns the details of a group based on 'groupId'.
-    //  */
-    function groupDetails(bytes32 groupId) external view returns (Group memory) {
-        return s_groupById[groupId];
-    }
-
-    function NumberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
-        return s_group_mems[groupId].length;
-    }
-
-    function balanceOf(bytes32 groupId) external view override returns (uint256) {
-        //return s_group_balances[groupId];
-        return s_group_balances_enum.get(groupId);
-    }
-
-    function getLummAddress() external view returns (address) {
-        return lummerAddress;
-    }
-
-    function getInterval() external view returns (uint256) {
-        return i_interval;
-    }
-
-    function get_TimeStamp() external view returns (uint256) {
-        return s_lastTimeStamp;
+    function allMembersPaymentStatus(bytes32 groupId) private view returns (bool) {
+        Member[] memory members = s_group_mems[groupId];
+        uint256 mem_length = members.length;
+        uint256 mem_count;
+        for (uint256 i = 0; i < mem_length; i++) {
+            if (members[i].paid_status == Status.PAID) {
+                mem_count++;
+            }
+        }
+        if (mem_count == mem_length) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }
