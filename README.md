@@ -1,7 +1,8 @@
 # Lum
 
- A smart contract that creates a group of users who can deposit funds into contract
- daily and every week a member of the group is sent all the funds, the process starts again.
+ A smart contract that creates a group of users who can deposit funds into the contract
+ daily and every week a member of the group is picked at random and sent all the funds and the process starts again till 
+ every member gets paid.
 
 
 ## Features to be implemented
