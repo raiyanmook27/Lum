@@ -26,7 +26,7 @@
     "ethers": "^5.7.0",
     "hardhat-contract-sizer": "^2.6.1",
     "hardhat-deploy": "^0.11.12",
-    "hardhat-gas-reporter": "^1.0.8",
+    "hardhat-gas-reporter": "^1.0.9",
     "prettier": "^2.7.1",
     "prettier-plugin-solidity": "^1.0.0-beta.24",
     "solhint": "^3.3.7",

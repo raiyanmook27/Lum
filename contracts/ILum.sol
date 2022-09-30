@@ -45,19 +45,8 @@ interface ILum {
      */
     function createGroup(string memory _name, uint256 _amount) external;
 
-    /**
-     *@dev deposit funds to Lum contract
-     *
-     */
     function depositFunds(bytes32 groupId) external payable;
 
-    /**
-     * @dev a member joins a group.
-     *
-     * @param groupId -> id of a group
-     *
-     * Emits a {GroupJoined} event.
-     */
     function joinGroup(bytes32 groupId) external;
 
     /**
