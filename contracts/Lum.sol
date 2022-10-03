@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.9;
 
+import "@openzeppelin/contracts/utils/Context.sol";
 import "./ILum.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
@@ -26,7 +27,7 @@ error Lum__TransferFailed();
  * @author Raiyan Mukhtar
  *
  */
-contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
+contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterface {
     /****LIBRARIES*******/
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -86,7 +87,8 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
      * @param _id -> id of a specific group.
      */
     modifier checkGroupExist(bytes32 _id) {
-        require(s_groupById[_id].id == _id, "Group doesn't exist");
+        Group memory group = groupDetails(_id);
+        require(group.id == _id, "Group doesn't exist");
         _;
     }
 
@@ -96,7 +98,9 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
      * @param _id -> id of a specific group.
      */
     modifier checkMembersFull(bytes32 _id) {
-        require(s_group_mems[_id].length < s_groupById[_id].number_of_members, "Group full");
+        Member[] memory members = getMembersOfGroup(_id); //gas saving
+        Group memory group = groupDetails(_id);
+        require(members.length < group.number_of_members, "Group full");
         _;
     }
 
@@ -104,12 +108,16 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
      * @dev check if caller is a member
      */
     modifier checkIfMemberExist(bytes32 groupId, address caller) {
-        Member[] memory members = s_group_mems[groupId];
+        Member[] memory members = getMembersOfGroup(groupId);
+        //Member[] memory members = s_group_mems[groupId];
         uint256 mem_length = members.length;
         bool is_exist;
         for (uint256 i = 0; i < mem_length; ) {
             if (members[i].mem_Address == caller) {
                 is_exist = true;
+            }
+            unchecked {
+                ++i;
             }
         }
         if (!is_exist) {
@@ -122,11 +130,11 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
      * @dev check if caller already paid
      */
     modifier checkIfMemberAlreadyPaid(bytes32 groupId, address caller) {
-        Member[] memory members = s_group_mems[groupId];
+        Member[] memory members = getMembersOfGroup(groupId);
         uint256 mem_length = members.length;
         bool has_paid;
         for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].paid_status == Status.PAID && members[i].mem_Address == caller) {
+            if (members[i].mem_Address == caller && members[i].paid_status == Status.PAID) {
                 has_paid = true;
             }
             unchecked {
@@ -140,7 +148,7 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
     }
 
     modifier checkIfMemberAlreadyWithdrew(bytes32 groupId, address caller) {
-        Member[] memory members = s_group_mems[groupId];
+        Member[] memory members = getMembersOfGroup(groupId);
         uint256 mem_length = members.length;
         bool has_withdrew;
         for (uint256 i = 0; i < mem_length; ) {
@@ -182,7 +190,8 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
         checkGroupExist(groupId)
         checkIfMemberAlreadyPaid(groupId, _msgSender())
     {
-        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        Group memory group = groupDetails(groupId);
+        uint256 lumAmount = group.lum_amount;
         if (msg.value != lumAmount) {
             revert Lum__NotEnoughEth();
         }
@@ -256,8 +265,8 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
     {
         address randomAddress = s_group_randomAddress[groupId];
         require(_msgSender() == randomAddress, "Not Authorized");
-
-        uint256 lumAmount = s_groupById[groupId].lum_amount;
+        Group memory group = groupDetails(groupId);
+        uint256 lumAmount = group.lum_amount;
         //Effects
         uint256 prevVal = s_group_balances_enum.get(groupId);
         s_group_balances_enum.set(groupId, prevVal - lumAmount);
@@ -285,32 +294,19 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
         s_groupId = groupId;
     }
 
-    // /**
-    //  * @dev Returns the details of a group based on 'groupId'.
-    //  */
-    function groupDetails(bytes32 groupId) external view returns (Group memory) {
-        return s_groupById[groupId];
-    }
-
     /**
      * @dev see {ILum.sol-numberOfGroups}.
      */
     function numberOfGroups() external view override returns (uint256) {
-        //return s_group.length;
         return s_group_enum.length();
     }
 
     function balanceOf(bytes32 groupId) external view override returns (uint256) {
-        //return s_group_balances[groupId];
         return s_group_balances_enum.get(groupId);
     }
 
     function numberOfGroupMembers(bytes32 groupId) external view override returns (uint256) {
         return s_group_mems[groupId].length;
-    }
-
-    function getRandomAddress(bytes32 groupId) external view override returns (address) {
-        return s_group_randomAddress[groupId];
     }
 
     function getInterval() external view returns (uint256) {
@@ -342,9 +338,11 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
             bytes memory /*performData*/
         )
     {
+        bytes32 _groupId = s_groupId; //gas saving
+        Group memory group = groupDetails(_groupId);
         //check time elapsed
-        bool groupExists = s_groupById[s_groupId].id == s_groupId;
-        bool hasMembersPaid = allMembersPaymentStatus(s_groupId);
+        bool groupExists = group.id == _groupId;
+        bool hasMembersPaid = allMembersPaymentStatus(_groupId);
         bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
         upkeepNeeded = (groupExists && hasMembersPaid && timePassed);
     }
@@ -354,7 +352,7 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
         view
         returns (Status paymentStat)
     {
-        Member[] memory members = s_group_mems[groupId];
+        Member[] memory members = getMembersOfGroup(groupId);
         uint256 mem_length = members.length;
 
         for (uint256 i = 0; i < mem_length; ) {
@@ -369,7 +367,7 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
     }
 
     function allMembersPaymentStatus(bytes32 groupId) public view returns (bool) {
-        Member[] memory members = s_group_mems[groupId];
+        Member[] memory members = getMembersOfGroup(groupId);
         uint256 mem_length = members.length;
         uint256 mem_count;
         for (uint256 i = 0; i < mem_length; i++) {
@@ -384,6 +382,17 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
         }
     }
 
+    function getRandomAddress(bytes32 groupId) public view override returns (address) {
+        return s_group_randomAddress[groupId];
+    }
+
+    // /**
+    //  * @dev Returns the details of a group based on 'groupId'.
+    //  */
+    function groupDetails(bytes32 groupId) public view returns (Group memory) {
+        return s_groupById[groupId];
+    }
+
     /**
      * @dev fulfills the random number request.
      *
@@ -393,10 +402,12 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
         uint256, /* requestId */
         uint256[] memory randomWords
     ) internal override {
+        bytes32 _groupId = s_groupId; //gas saving
+        Member[] memory members = getMembersOfGroup(_groupId);
         uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
         s_lastTimeStamp = block.timestamp;
-        address randomAddress = s_group_mems[s_groupId][indexOfLummer].mem_Address;
-        s_group_randomAddress[s_groupId] = randomAddress;
+        address randomAddress = members[indexOfLummer].mem_Address;
+        s_group_randomAddress[_groupId] = randomAddress;
         emit lummerAddressPicked(randomAddress);
     }
 
@@ -427,5 +438,13 @@ contract Lum is ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompatibleInterf
                 ++i;
             }
         }
+    }
+
+    function getMembersOfGroup(bytes32 groupId) private view returns (Member[] memory) {
+        return s_group_mems[groupId];
+    }
+
+    function getGroupId() private view returns (bytes32) {
+        return s_groupId;
     }
 }
