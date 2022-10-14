@@ -16,7 +16,6 @@ error Lum__CallerAlreadyPaid();
 error Lum__NotEnoughEth();
 error Lum__UpkeepNotNeeded();
 error Lum_NotAllMembersPaid();
-error Lum__CallerAlreadyWithdrew();
 error Lum__TransferFailed();
 
 /**
@@ -59,6 +58,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     EnumerableMap.Bytes32ToUintMap private s_group_balances_enum;
     mapping(bytes32 => Group) private s_groupById;
     mapping(bytes32 => Member[]) private s_group_mems;
+    mapping(bytes32 => mapping(address => bool)) private s_mems;
+    mapping(bytes32 => mapping(address => bool)) private s_mems_paid;
     mapping(bytes32 => uint256) private s_group_balances;
     mapping(bytes32 => address) private s_group_randomAddress;
 
@@ -107,22 +108,8 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     /**
      * @dev check if caller is a member
      */
-    modifier checkIfMemberExist(bytes32 groupId, address caller) {
-        Member[] memory members = getMembersOfGroup(groupId);
-        //Member[] memory members = s_group_mems[groupId];
-        uint256 mem_length = members.length;
-        bool is_exist;
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == caller) {
-                is_exist = true;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        if (!is_exist) {
-            revert Lum__CallerNonExistent();
-        }
+    modifier checkIfMemberExist(bytes32 id, address caller) {
+        if (!checkMember(id, caller)) revert Lum__CallerNonExistent();
         _;
     }
 
@@ -130,38 +117,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
      * @dev check if caller already paid
      */
     modifier checkIfMemberAlreadyPaid(bytes32 groupId, address caller) {
-        Member[] memory members = getMembersOfGroup(groupId);
-        uint256 mem_length = members.length;
-        bool has_paid;
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == caller && members[i].paid_status == Status.PAID) {
-                has_paid = true;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        if (has_paid) {
-            revert Lum__CallerAlreadyPaid();
-        }
-        _;
-    }
-
-    modifier checkIfMemberAlreadyWithdrew(bytes32 groupId, address caller) {
-        Member[] memory members = getMembersOfGroup(groupId);
-        uint256 mem_length = members.length;
-        bool has_withdrew;
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == caller && members[i].withdrawn) {
-                has_withdrew = true;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        if (has_withdrew) {
-            revert Lum__CallerAlreadyWithdrew();
-        }
+        if (checkMemberPaid(groupId, caller)) revert Lum__CallerAlreadyPaid();
         _;
     }
 
@@ -192,14 +148,9 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     {
         Group memory group = groupDetails(groupId);
         uint256 lumAmount = group.lum_amount;
-        if (msg.value != lumAmount) {
-            revert Lum__NotEnoughEth();
-        }
-
+        if (msg.value != lumAmount) revert Lum__NotEnoughEth();
+        s_mems_paid[groupId][_msgSender()] = true;
         s_group_balances_enum.set(groupId, s_group_balances_enum.get(groupId) + msg.value);
-
-        UpdatePaymentStatus(groupId, _msgSender());
-
         emit GroupFunded(msg.sender, groupId, msg.value);
     }
 
@@ -233,7 +184,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     function createGroup(string memory _name, uint256 _amount) external override {
         bytes32 id = keccak256(abi.encode(_name, _msgSender(), NUM_MEMBERS));
         //check if it calls saves gas
-        //s_group.push(id);
+        s_mems[id][_msgSender()] = true;
         s_group_enum.add(id);
         s_groupById[id] = Group(id, _amount, NUM_MEMBERS, _name);
         s_group_mems[id].push(Member(_msgSender(), Status.NOT_PAID, false));
@@ -250,6 +201,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         checkGroupExist(groupId)
         checkMembersFull(groupId)
     {
+        s_mems[groupId][_msgSender()] = true;
         s_group_mems[groupId].push(Member(_msgSender(), Status.NOT_PAID, false));
         emit GroupJoined(groupId, _msgSender());
     }
@@ -257,27 +209,20 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
     /**
      * @dev see {ILum.sol-Withdraw}.
      */
-    function withdraw(bytes32 groupId)
-        external
-        override
-        checkGroupExist(groupId)
-        checkIfMemberAlreadyWithdrew(groupId, _msgSender())
-    {
-        address randomAddress = s_group_randomAddress[groupId];
+    function withdraw(bytes32 groupId) external override checkGroupExist(groupId) nonReentrant {
+        //check
+        address randomAddress = getRandomAddress(groupId);
         require(_msgSender() == randomAddress, "Not Authorized");
         Group memory group = groupDetails(groupId);
         uint256 lumAmount = group.lum_amount;
         //Effects
         uint256 prevVal = s_group_balances_enum.get(groupId);
         s_group_balances_enum.set(groupId, prevVal - lumAmount);
-        UpdateWithdrawStatus(groupId, _msgSender());
         s_group_randomAddress[groupId] = address(0);
-        //interaction
+        //interactions
         (bool sent, ) = randomAddress.call{value: lumAmount}("");
 
-        if (!sent) {
-            revert Lum__TransferFailed();
-        }
+        if (!sent) revert Lum__TransferFailed();
         emit FundsWithdrawn(randomAddress, lumAmount, groupId);
     }
 
@@ -292,6 +237,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         checkIfMemberExist(groupId, _msgSender())
     {
         s_groupId = groupId;
+        emit LumStarted(groupId);
     }
 
     /**
@@ -338,32 +284,15 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
             bytes memory /*performData*/
         )
     {
-        bytes32 _groupId = s_groupId; //gas saving
+        bytes32 _groupId = getGroupId(); //gas saving
         Group memory group = groupDetails(_groupId);
         //check time elapsed
         bool groupExists = group.id == _groupId;
-        bool hasMembersPaid = allMembersPaymentStatus(_groupId);
+        //bool hasMembersPaid = allMembersPaymentStatus(_groupId);
         bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
-        upkeepNeeded = (groupExists && hasMembersPaid && timePassed);
-    }
-
-    function getMemberPaymentStatus(address memberAddress, bytes32 groupId)
-        public
-        view
-        returns (Status paymentStat)
-    {
-        Member[] memory members = getMembersOfGroup(groupId);
-        uint256 mem_length = members.length;
-
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == memberAddress) {
-                paymentStat = members[i].paid_status;
-            }
-
-            unchecked {
-                ++i;
-            }
-        }
+        upkeepNeeded = (groupExists &&
+            /*hasMembersPaid && */
+            timePassed);
     }
 
     function allMembersPaymentStatus(bytes32 groupId) public view returns (bool) {
@@ -402,7 +331,7 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         uint256, /* requestId */
         uint256[] memory randomWords
     ) internal override {
-        bytes32 _groupId = s_groupId; //gas saving
+        bytes32 _groupId = getGroupId(); //gas saving
         Member[] memory members = getMembersOfGroup(_groupId);
         uint256 indexOfLummer = randomWords[0] % NUM_MEMBERS;
         s_lastTimeStamp = block.timestamp;
@@ -411,40 +340,19 @@ contract Lum is Context, ILum, ReentrancyGuard, VRFConsumerBaseV2, KeeperCompati
         emit lummerAddressPicked(randomAddress);
     }
 
-    function UpdatePaymentStatus(bytes32 groupId, address memberAddress) private {
-        Member[] storage members = s_group_mems[groupId];
-
-        uint256 mem_length = members.length;
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == memberAddress) {
-                members[i].paid_status = Status.PAID;
-            }
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
-    function UpdateWithdrawStatus(bytes32 groupId, address memberAddress) private {
-        Member[] storage members = s_group_mems[groupId];
-
-        uint256 mem_length = members.length;
-        for (uint256 i = 0; i < mem_length; ) {
-            if (members[i].mem_Address == memberAddress) {
-                members[i].withdrawn = true;
-            }
-
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
     function getMembersOfGroup(bytes32 groupId) private view returns (Member[] memory) {
         return s_group_mems[groupId];
     }
 
     function getGroupId() private view returns (bytes32) {
         return s_groupId;
+    }
+
+    function checkMember(bytes32 groupId, address caller) private view returns (bool) {
+        return s_mems[groupId][caller];
+    }
+
+    function checkMemberPaid(bytes32 groupId, address caller) private view returns (bool) {
+        return s_mems_paid[groupId][caller];
     }
 }
