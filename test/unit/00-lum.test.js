@@ -98,12 +98,12 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
 
                   expect(await lum.balanceOf(id_const)).to.equal(sendValue)
               })
-              it("should update member payment status", async () => {
-                  await lum.depositFunds(id_const, { value: sendValue })
-                  expect(await lum.getMemberPaymentStatus(accounts[0].address, id_const)).to.equal(
-                      0
-                  )
-              })
+              //   it("should update member payment status", async () => {
+              //       await lum.depositFunds(id_const, { value: sendValue })
+              //       expect(await lum.getMemberPaymentStatus(accounts[0].address, id_const)).to.equal(
+              //           0
+              //       )
+              //   })
               it("should emit an event when deposit is successful", async () => {
                   await expect(lum.depositFunds(id_const, { value: sendValue })).to.emit(
                       lum,
@@ -112,19 +112,19 @@ const { developmentChains, networkConfig } = require("../../helper-hardhat-confi
               })
           })
 
-          describe("allMembersPaid", function () {
-              it("should return true if all members in a group have paid", async () => {
-                  await lum.createGroup("raiyan", sendValue)
-                  await lum.depositFunds(id_const, { value: sendValue })
-                  accounts = await ethers.getSigners()
+          //   describe("allMembersPaid", function () {
+          //       it("should return true if all members in a group have paid", async () => {
+          //           await lum.createGroup("raiyan", sendValue)
+          //           await lum.depositFunds(id_const, { value: sendValue })
+          //           accounts = await ethers.getSigners()
 
-                  for (let i = 1; i < lummers; i++) {
-                      await lum.connect(accounts[i]).joinGroup(id_const)
-                      await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
-                  }
-                  expect(await lum.allMembersPaymentStatus(id_const)).to.equal(true)
-              })
-          })
+          //           for (let i = 1; i < lummers; i++) {
+          //               await lum.connect(accounts[i]).joinGroup(id_const)
+          //               await lum.connect(accounts[i]).depositFunds(id_const, { value: sendValue })
+          //           }
+          //           expect(await lum.allMembersPaymentStatus(id_const)).to.equal(true)
+          //       })
+          //   })
 
           describe("checkUpkeep", function () {
               it("should return false if time has passed", async function () {
