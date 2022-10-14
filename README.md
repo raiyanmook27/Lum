@@ -16,6 +16,7 @@
 - [X] Update mappings to Open Zeppelins EnumerableMap.
 - [X] store and reset random addresses for various groups
 - [X] Make Gas Optimizations
+- [ ] Create a frontend.
 
 
 # Usage 
